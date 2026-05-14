@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mouse-envs"
+version = "0.1.0"
+description = "Meta-Optimization Using Sequential Experiences — environments"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mouse",
+    "gymnasium[atari,box2d]>=1.2.3",
+    "ns_gym>=1.0.10",
+    "stable-baselines3>=2.7.0",
+    "huggingface_hub>=1.5.0",
+    "pillow>=12.1.1",
+    "multiprocess>=0.70.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyright",
+    "pytest",
+]
+
+[tool.uv.pip]
+extra-index-url = ["https://download.pytorch.org/whl/cu128"]
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mouse*"]
+
+[tool.uv.sources]
+mouse = { git = "https://github.com/TODO/mouse" }
