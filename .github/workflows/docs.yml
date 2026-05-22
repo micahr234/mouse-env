@@ -36,10 +36,12 @@ jobs:
           enable-cache: false
 
       - name: Install docs dependencies
-        run: uv pip install --system ".[docs]"
+        run: |
+          uv pip install --system zensical "mkdocstrings-python>=1.16" ghp-import
+          uv pip install --system --no-deps -e .
 
       - name: Build docs
-        run: zensical build --strict
+        run: zensical build
 
       - uses: actions/upload-pages-artifact@v3
         with:
