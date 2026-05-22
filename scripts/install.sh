@@ -87,7 +87,7 @@ setup_venv() {
 
     # Install project dependencies (core + all optional extras).
     log "Installing project dependencies..."
-    if ! uv pip install -e ".[dev,docs]" --python .venv/bin/python --index-strategy unsafe-best-match; then
+    if ! uv pip install -e ".[dev,docs]" --python .venv/bin/python; then
         error "Failed to install project dependencies"
         exit 1
     fi
