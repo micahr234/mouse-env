@@ -8,7 +8,7 @@ MOUSE is actively developed and contributions are very welcome — whether that'
 - **Feature requests** — open an issue describing the use case. If you have a design idea, sketching it out in the issue first helps align before writing code.
 - **Pull requests** — see the workflow below.
 - **New environments** — if you add support for a new environment type or NS-Gym scheduler, sharing results as an issue or discussion is valuable.
-- **Documentation** — fixes to typos, clearer explanations, or new examples are all appreciated.
+- **Documentation** — edits to Markdown under `docs/` or the README are welcome (no doc site build step).
 
 ## Development setup
 
@@ -19,7 +19,7 @@ cd mouse-env
 source scripts/install.sh
 ```
 
-This installs the package in editable mode along with all dev and docs extras.
+This installs the package in editable mode with dev dependencies.
 
 ## Pull request workflow
 
