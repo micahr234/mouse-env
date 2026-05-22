@@ -33,7 +33,7 @@ There are no formal tests yet — if you add a new feature, a short usage exampl
 ## Code style
 
 - Python 3.12+, type-annotated throughout.
-- Follow the existing patterns for new modules (wrappers in `base.py`, env factories in `envs.py`, public API in `__init__.py`, documentation in `docs/`).
+- Follow the existing patterns: wrappers in `stack/`, env backends in `backends/`, config in `config.py`, factory in `factory.py`, public API in `__init__.py`, documentation in `docs/`.
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 

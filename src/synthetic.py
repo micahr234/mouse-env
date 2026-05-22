@@ -10,9 +10,10 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.envs.registration import register, registry
 
+from mouse.envs.tabular.value_iteration import value_iteration_tabular
 from mouse.utils import map_payload_to_json_str
 
-SYNTHETIC_ENV_ID = "Custom-SyntheticEnv-v1"
+from mouse.envs.env_ids import SYNTHETIC_ENV_ID
 
 
 def _uniform_n(
@@ -371,20 +372,15 @@ class CustomSyntheticEnv(gym.Env[int, int]):
         Returns:
             ``float64`` array of shape ``(obs_size, action_size)`` — optimal Q-values.
         """
-        g = float(self.gamma)
-        reward = self.map["reward"]                        # (S, A)
-        transition = self.map["transition"]                # (S, A) → next state
-        not_goal = ~self.map["goal"]                       # (S, A) bool, False at goal transitions
-        step = float(self._step_penalty)
-        q = np.zeros((self.obs_size, self.action_size), dtype=np.float64)
-        for _ in range(max_iter):
-            v = q.max(axis=1)                              # (S,) greedy value per state
-            q_new = reward + step + g * not_goal * v[transition]
-            if np.max(np.abs(q_new - q)) <= float(tolerance):
-                q = q_new
-                break
-            q = q_new
-        return q
+        return value_iteration_tabular(
+            reward=self.map["reward"],
+            transition=self.map["transition"],
+            goal=self.map["goal"],
+            gamma=float(self.gamma),
+            step_penalty=float(self._step_penalty),
+            max_iter=max_iter,
+            tolerance=tolerance,
+        )
 
     def _refresh_q_table(self) -> None:
         if self._q_table is not None:

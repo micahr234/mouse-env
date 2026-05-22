@@ -1,16 +1,17 @@
 # Envs
 
-The `mouse.envs.envs` module is the main entry point. It contains `EnvConfig` (the environment configuration dataclass) and `make_vector_env` (the unified factory).
+The `mouse.envs.envs` module re-exports the public API for backward compatibility.
+Prefer ``from mouse.envs import EnvConfig, make_vector_env`` (see also [Factory](factory.md)).
 
 ## make_vector_env
 
-::: mouse.envs.envs.make_vector_env
+::: mouse.envs.factory.make_vector_env
 
 ---
 
 ## EnvConfig
 
-::: mouse.envs.envs.EnvConfig
+::: mouse.envs.config.EnvConfig
 
 ---
 

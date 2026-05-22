@@ -24,8 +24,7 @@ import gymnasium as gym
 import numpy as np
 from huggingface_hub import hf_hub_download
 
-from mouse.envs.frozenlake import CUSTOM_FROZENLAKE_ENV_ID
-from mouse.envs.synthetic import SYNTHETIC_ENV_ID
+from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
 
 
 def _to_batched_action_star(value: Any, num_envs: int) -> np.ndarray:
@@ -665,7 +664,7 @@ def apply_q_star_source_env_kwargs(
         env_id: Gymnasium env id used to determine whether the env supports
             ``emit_q_star``.
         env_kwargs: Current env kwargs dict (not mutated; a copy is returned).
-        q_star_source: Expert source config; see :class:`~mouse.envs.envs.EnvConfig`.
+        q_star_source: Expert source config; see :class:`~mouse.envs.config.EnvConfig`.
 
     Returns:
         A new ``dict`` with any required keys added. Returns ``env_kwargs`` unchanged
