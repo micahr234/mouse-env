@@ -39,14 +39,27 @@ There are no formal tests yet — if you add a new feature, a short usage exampl
 
 ## Releasing to PyPI
 
-Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC). One-time setup on [pypi.org](https://pypi.org/manage/project/mouse-envs/settings/publishing/):
+Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC).
+
+### One-time setup
+
+1. **Register the PyPI project name first (as your user account).** Trusted publishers cannot create a new project. The name must match `[project].name` in `pyproject.toml` exactly: **`mouse-envs`** (not `mouse-env`). If the name is not taken yet, reserve it on PyPI (e.g. upload once with an API token, or use PyPI’s project registration flow) so the project exists before CI publishes.
+
+2. **Add a trusted publisher on that project** at [pypi.org/manage/project/mouse-envs/settings/publishing/](https://pypi.org/manage/project/mouse-envs/settings/publishing/):
 
 | Field | Value |
 |-------|-------|
+| PyPI project | `mouse-envs` (must match `pyproject.toml`) |
 | Owner | `micahr234` |
 | Repository | `mouse-env` |
 | Workflow | `publish.yml` |
 | Environment | `pypi` |
+
+3. Ensure the GitHub repo has a **`pypi`** environment (Settings → Environments) if you use `environment: pypi` in the workflow.
+
+**Troubleshooting:** `400 Non-user identities cannot create new projects` means OIDC worked but PyPI has no project **`mouse-envs`** linked to that publisher (wrong project name on the publisher, or the project was never created). Fix the publisher’s project name and/or create `mouse-envs` on PyPI, then re-run the Publish workflow.
+
+### Publishing a version
 
 To publish a release:
 
