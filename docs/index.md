@@ -1,5 +1,7 @@
 # Meta-Optimization Using Sequential Experiences — Environments
 
+<p align="center"><img src="mouse.png" alt="MOUSE" width="400"/></p>
+
 **mouse-envs** is the environment package for [MOUSE](https://micahr234.github.io/mouse-core/), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs (FrozenLake, SyntheticEnv), and rich rollout metadata (episode stats, expert Q-values) used to collect training data for MOUSE agents.
 
 ---
