@@ -72,6 +72,44 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
         seed: int | None = None,
         first_visit_bonus: float = 0.0,
     ):
+        """
+        Args:
+            render_mode: Gymnasium render mode (e.g. ``"human"``). ``None`` disables rendering.
+            is_slippery: When ``True``, movement succeeds with probability 1/3 and may slide
+                sideways — the standard stochastic FrozenLake setting.
+            min_hops: Minimum BFS distance from each start tile to the nearest goal tile.
+                Maps that don't satisfy this are rejected and regenerated.
+            min_width: Minimum map width (columns) for random maps.
+            max_width: Maximum map width (columns) for random maps.
+            min_height: Minimum map height (rows) for random maps.
+            max_height: Maximum map height (rows) for random maps.
+            hole_prob: Probability that any non-start, non-goal tile becomes a hole ``"H"``.
+            start_pos: Fixed start position(s) as a tile index or list of indices.
+                ``None`` uses ``start_pos_prob`` or places one start randomly.
+            start_pos_prob: Probability that each non-goal tile becomes a start tile.
+                Ignored when ``start_pos`` is set.
+            goal_pos: Fixed goal position(s). ``None`` uses ``goal_pos_prob`` or one random goal.
+            goal_pos_prob: Probability that each available tile becomes a goal tile.
+            max_tries: Number of map generation attempts before raising a ``RuntimeError``.
+            fixed_map: Override the random map with a fixed layout. Accepted forms:
+
+                - ``list[str]`` / ``tuple[str, ...]`` — rows of ``S``, ``F``, ``H``, ``G`` chars.
+                - ``dict`` with ``"board"`` key (list of row strings) and optional ``"rewards"``
+                  key mapping goal state indices to reward values.
+            emit_q_star: When ``True``, run value iteration on every ``reset()`` and inject
+                the resulting Q-table into ``info["q_star"]`` each step.
+            emit_map: When ``True``, inject the map layout as a JSON string into
+                ``info["map"]`` once per episode (on the first step/reset).
+            goal_reward_low: Lower bound for per-goal reward sampling (inclusive).
+            goal_reward_high: Upper bound for per-goal reward sampling. Equal bounds yield
+                a fixed reward.
+            step_penalty: Scalar added to the reward on every step (e.g. ``-0.01`` for a
+                step cost). Also applied inside value iteration so ``q_star`` matches.
+            seed: Random seed for map generation and Q-table RNG. ``None`` = non-deterministic.
+            first_visit_bonus: Bonus added to ``q_star[a]`` for any action that has positive
+                probability of reaching an unvisited state. Applied at supervision time only;
+                does not affect ``compute_q_table``.
+        """
         lo, hi = float(goal_reward_low), float(goal_reward_high)
         if lo > hi:
             lo, hi = hi, lo
@@ -364,7 +402,21 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
         max_iter: int = 10_000,
         tolerance: float = 1e-10,
     ) -> np.ndarray:
-        """Optimal Q-table via value iteration on :attr:`P` (same scheme as ``CustomSyntheticEnv.compute_q_table``)."""
+        """Compute the optimal Q-table via value iteration on Gymnasium's ``P`` matrix.
+
+        Uses the same Bellman update scheme as :meth:`CustomSyntheticEnv.compute_q_table
+        <mouse.envs.synthetic.CustomSyntheticEnv.compute_q_table>`. Goal-tile rewards are
+        overridden with the per-tile values from ``_goal_rewards_by_state``, and
+        ``step_penalty`` is added to every non-terminal transition.
+
+        Args:
+            max_iter: Maximum number of value-iteration sweeps.
+            tolerance: Convergence threshold on the max absolute change in Q-values.
+
+        Returns:
+            ``float64`` array of shape ``(num_states, 4)`` — optimal Q-values for
+            every (state, action) pair under the current map.
+        """
         g = float(self.gamma)
         n_s = int(self.nrow * self.ncol)
         n_a = 4
@@ -472,7 +524,12 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
 
 
 def ensure_custom_frozenlake_registered() -> None:
-    """Register the custom FrozenLake env id exactly once."""
+    """Register ``Custom-FrozenLake-v1`` with Gymnasium exactly once.
+
+    Safe to call multiple times; subsequent calls are no-ops. Called automatically
+    by :func:`~mouse.envs.envs.PlainVectorEnv` when ``env_id`` matches
+    :data:`CUSTOM_FROZENLAKE_ENV_ID`.
+    """
     if CUSTOM_FROZENLAKE_ENV_ID in registry:
         return
     register(

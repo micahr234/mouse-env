@@ -1,3 +1,14 @@
+"""Expert policy adapters for injecting Q-values and optimal actions into rollout info.
+
+Provides:
+- ExpertPolicyAdapter: dataclass that wraps a loaded policy and exposes a uniform interface
+  for deriving ``metadata_q_star`` from env info, observation queries, or action hints.
+- build_q_star_source_adapter: factory that reads a ``q_star_source`` config dict and
+  returns the appropriate adapter (SB3 policy, tabular Q-table, or env-info passthrough).
+- action_star_to_one_hot_q_star: convert integer expert actions to one-hot Q-value rows.
+- apply_q_star_source_env_kwargs: inject ``emit_q_star`` kwargs for custom envs.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -65,7 +76,29 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
 
 @dataclass
 class ExpertPolicyAdapter:
-    """Adapter used by env runners to produce expert metadata (q_star/action hints)."""
+    """Adapter that extracts expert Q-values or optimal actions from various sources.
+
+    Used internally by :class:`~mouse.envs.base.QStarWrapper` to populate
+    ``info["metadata_q_star"]`` on each step. Instantiated by
+    :func:`build_q_star_source_adapter`; do not construct directly.
+
+    Attributes:
+        name (str): Normalised provider name (``"metadata_q_star"``, ``"sb3_rl_zoo"``,
+            or ``"hf_q_table"``).
+        require_metadata_action_star (bool): When ``True``, :meth:`action_star_from_infos`
+            raises if ``"action_star"`` is missing from the env info dict.
+        external_policy: Loaded SB3 policy or :class:`_TabularQPolicy` instance, or
+            ``None`` when Q-values come directly from env info.
+        deterministic (bool): Whether to use deterministic (argmax) action selection
+            when querying ``external_policy.predict``.
+        obs_key (str): Canonical observation key used when preparing observations for
+            the external policy.
+        external_frame_stack (int): Number of stacked frames expected by the policy
+            (inferred from the policy's observation space shape). ``0`` or ``1`` means
+            no stacking.
+        external_obs_history (np.ndarray | None): Rolling frame buffer for policies that
+            require frame stacking. Managed internally.
+    """
 
     name: str
     require_metadata_action_star: bool = True
@@ -80,6 +113,19 @@ class ExpertPolicyAdapter:
         infos: dict[str, Any],
         num_envs: int,
     ) -> np.ndarray | None:
+        """Extract expert actions from ``info["action_star"]`` if present.
+
+        Args:
+            infos: Step info dict from the env.
+            num_envs: Expected batch size for shape validation.
+
+        Returns:
+            ``int64[num_envs]`` array of expert actions, or ``None`` if the key is absent
+            and ``require_metadata_action_star`` is ``False``.
+
+        Raises:
+            ValueError: If the key is absent and ``require_metadata_action_star`` is ``True``.
+        """
         value = infos.get("action_star", None)
         if value is None:
             if self.require_metadata_action_star:
@@ -95,6 +141,15 @@ class ExpertPolicyAdapter:
         infos: dict[str, Any],
         num_envs: int,
     ) -> np.ndarray | None:
+        """Extract Q-values from ``info["q_star"]`` if present.
+
+        Args:
+            infos: Step info dict from the env.
+            num_envs: Expected batch size for shape validation.
+
+        Returns:
+            ``float64[num_envs, action_dim]`` array, or ``None`` if the key is absent.
+        """
         value = infos.get("q_star", None)
         if value is None:
             return None
@@ -106,9 +161,17 @@ class ExpertPolicyAdapter:
         num_envs: int,
         num_actions: int,
     ) -> np.ndarray | None:
-        """Derive one-hot Q-values from ``action_star`` in env infos.
+        """Derive one-hot Q-values from ``info["action_star"]``.
 
         Returns ``None`` if ``action_star`` is absent or ``num_actions`` is zero.
+
+        Args:
+            infos: Step info dict from the env.
+            num_envs: Expected batch size for shape validation.
+            num_actions: Number of actions in the action space (determines one-hot width).
+
+        Returns:
+            ``float64[num_envs, num_actions]`` one-hot array, or ``None``.
         """
         if num_actions <= 0:
             return None
@@ -123,6 +186,16 @@ class ExpertPolicyAdapter:
         obs: np.ndarray,
         done_mask: np.ndarray | None = None,
     ) -> np.ndarray | None:
+        """Query ``external_policy.predict(obs)`` to get expert actions.
+
+        Args:
+            obs: Current observations, shape ``(num_envs, *obs_shape)``.
+            done_mask: Boolean array of shape ``(num_envs,)`` indicating which envs
+                just finished an episode (used to reset frame-stack history).
+
+        Returns:
+            ``int64[num_envs]`` expert actions, or ``None`` if no external policy is set.
+        """
         if self.external_policy is None:
             return None
         obs_in = self._policy_obs(obs=obs, done_mask=done_mask)
@@ -134,6 +207,18 @@ class ExpertPolicyAdapter:
         obs: np.ndarray,
         done_mask: np.ndarray | None = None,
     ) -> np.ndarray | None:
+        """Query ``external_policy.predict_q(obs)`` to get Q-values directly.
+
+        Falls back to ``None`` if the policy does not expose a ``predict_q`` method
+        (e.g. SB3 policy-gradient algorithms).
+
+        Args:
+            obs: Current observations, shape ``(num_envs, *obs_shape)``.
+            done_mask: Boolean array indicating episode boundaries for frame-stack reset.
+
+        Returns:
+            ``float64[num_envs, action_dim]`` Q-values, or ``None``.
+        """
         if self.external_policy is None:
             return None
         predict_q = getattr(self.external_policy, "predict_q", None)
@@ -379,6 +464,36 @@ def build_q_star_source_adapter(
     obs_key: str = "observation",
     single_observation_space: Any | None = None,
 ) -> ExpertPolicyAdapter | None:
+    """Build an :class:`ExpertPolicyAdapter` from a ``q_star_source`` config dict.
+
+    Resolves the provider name and loads the appropriate expert policy:
+
+    - ``"metadata_q_star"`` (aliases: ``"env_q_star"``, ``"info_q_star"``) — reads
+      Q-values or action hints directly from env info keys; no external model loaded.
+    - ``"sb3_rl_zoo"`` — downloads and loads an SB3 policy checkpoint from the
+      Hugging Face Hub (or a local ``path``).
+    - ``"hf_q_table"`` (alias: ``"q_table"``) — downloads and loads a tabular Q-table
+      pickle from the Hub (or a local ``path``).
+
+    Args:
+        env_id: Environment id; used when selecting the correct SB3 algo or table.
+        q_star_source: Config dict with at minimum a ``"provider"`` (or ``"name"``) key.
+            ``None`` or an empty/disabled config returns ``None``.
+        obs_key: Canonical observation key forwarded to the adapter (used for
+            frame-stack inference and observation pre-processing).
+        single_observation_space: The env's ``single_observation_space``; used to
+            infer ``obs_space_dims`` for multi-dimensional tabular Q-tables.
+
+    Returns:
+        An :class:`ExpertPolicyAdapter` instance, or ``None`` if ``q_star_source`` is
+        disabled/absent.
+
+    Raises:
+        ValueError: If the provider name is unrecognised, required keys are missing,
+            or the loaded checkpoint is malformed.
+        ImportError: If ``sb3_rl_zoo`` is requested but ``stable-baselines3`` is not
+            installed, or ``hf_q_table`` requires ``huggingface_hub`` which is missing.
+    """
     policy_name = normalize_q_star_source_name(q_star_source)
     if policy_name is None:
         return None
@@ -540,7 +655,22 @@ def apply_q_star_source_env_kwargs(
     env_kwargs: dict[str, Any],
     q_star_source: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Apply env kwargs required by q_star_source metadata generation."""
+    """Inject any env-construction kwargs required by the ``q_star_source`` config.
+
+    For custom envs (FrozenLake / SyntheticEnv) with ``provider="metadata_q_star"``,
+    this sets ``emit_q_star=True`` in ``env_kwargs`` so the env runs value iteration
+    and emits Q-values into ``info["q_star"]`` each step.
+
+    Args:
+        env_id: Gymnasium env id used to determine whether the env supports
+            ``emit_q_star``.
+        env_kwargs: Current env kwargs dict (not mutated; a copy is returned).
+        q_star_source: Expert source config; see :class:`~mouse.envs.envs.EnvConfig`.
+
+    Returns:
+        A new ``dict`` with any required keys added. Returns ``env_kwargs`` unchanged
+        when ``q_star_source`` is ``None`` or the env does not support ``emit_q_star``.
+    """
     policy_name = normalize_q_star_source_name(q_star_source)
     if policy_name is None:
         return env_kwargs

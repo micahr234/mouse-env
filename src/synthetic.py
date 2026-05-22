@@ -78,6 +78,42 @@ class CustomSyntheticEnv(gym.Env[int, int]):
         transition_prob: float = 0.5,
         seed: int | None = None,
     ):
+        """
+        Args:
+            obs_size: Number of discrete states (``observation_space = Discrete(obs_size)``).
+                Ignored when ``map`` is provided (inferred from ``map["transition"]``).
+            action_size: Number of discrete actions. Ignored when ``map`` is provided.
+            reward_low: Lower bound (inclusive) for non-goal per-(state, action) rewards.
+            reward_high: Upper bound (exclusive) for non-goal rewards. Equal to ``reward_low``
+                gives constant zero rewards on non-goal transitions.
+            goal_reward_low: Lower bound for goal per-(state, action) rewards.
+            goal_reward_high: Upper bound for goal rewards.
+            goal_prob: Probability that any ``(state, action)`` pair is designated as a
+                goal (terminal) transition when sampling a random MDP.
+            start_prob: Probability that each valid (non-goal) state is included as a
+                start state in the sampled MDP.
+            min_distance: Minimum BFS distance from any start state to the nearest goal
+                transition. ``0`` allows starting adjacent to a goal.
+            max_tries: Number of MDP sampling attempts before raising a ``ValueError``.
+            map: Fixed map dict with keys ``"transition"``, ``"goal"``, ``"reward"``,
+                and ``"start"`` (all as ``numpy`` arrays). When provided, all random-sampling
+                parameters above are ignored.
+            emit_q_star: When ``True``, run value iteration at construction and inject the
+                Q-table into ``info["q_star"]`` on each step/reset.
+            emit_map: When ``True``, inject the MDP arrays as a JSON string into
+                ``info["map"]`` once per episode (on the first step/reset after construction).
+            step_penalty: Scalar added to every step reward (including terminal steps).
+                Included in value iteration so ``q_star`` matches rollout rewards.
+            transition_prob: When sampling a random MDP, probability that a ``(state, action)``
+                pair leads to a non-self-loop next state. The escape action
+                ``a = state % action_size`` is always a non-self-loop. Ignored when ``map``
+                is provided.
+            seed: Random seed for MDP sampling. ``None`` = non-deterministic.
+
+        Raises:
+            ValueError: For invalid parameter combinations (e.g. ``reward_low > reward_high``,
+                ``obs_size < 2``, or a fixed ``map`` that fails validation).
+        """
         super().__init__()
         rl, rh = float(reward_low), float(reward_high)
         if rl > rh:
@@ -316,7 +352,25 @@ class CustomSyntheticEnv(gym.Env[int, int]):
         max_iter: int = 10000,
         tolerance: float = 1e-10,
     ) -> np.ndarray:
-        """Return the optimal Q-table via value iteration on the tabular transition matrix."""
+        """Compute the optimal Q-table via value iteration on the tabular MDP.
+
+        The Bellman update at each sweep is:
+
+        .. code-block:: text
+
+            Q(s, a) = reward(s, a) + step_penalty + gamma * (not_goal(s, a)) * V(transition(s, a))
+
+        where ``V(s) = max_a Q(s, a)`` and goal transitions are treated as terminal
+        (no future value). Converges when the max absolute change in Q is below
+        ``tolerance``.
+
+        Args:
+            max_iter: Maximum number of value-iteration sweeps.
+            tolerance: Convergence threshold (max absolute change in Q-values).
+
+        Returns:
+            ``float64`` array of shape ``(obs_size, action_size)`` — optimal Q-values.
+        """
         g = float(self.gamma)
         reward = self.map["reward"]                        # (S, A)
         transition = self.map["transition"]                # (S, A) → next state
@@ -395,7 +449,12 @@ class CustomSyntheticEnv(gym.Env[int, int]):
 
 
 def ensure_synthetic_env_registered() -> None:
-    """Register the random env id exactly once."""
+    """Register ``Custom-SyntheticEnv-v1`` with Gymnasium exactly once.
+
+    Safe to call multiple times; subsequent calls are no-ops. Called automatically
+    by :func:`~mouse.envs.envs.PlainVectorEnv` when ``env_id`` matches
+    :data:`SYNTHETIC_ENV_ID`.
+    """
     if SYNTHETIC_ENV_ID in registry:
         return
     register(

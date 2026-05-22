@@ -38,7 +38,7 @@ from ns_gym.update_functions import (
 )
 from ns_gym.wrappers import NSClassicControlWrapper, NSCliffWalkingWrapper, NSFrozenLakeWrapper
 
-from mouse.envs.base import _BaseVectorEnv, ObservationSliceWrapper
+from mouse.envs.base import ObservationSliceWrapper, build_vector_env_stack
 
 
 # -----------------------------------------------------------------------------
@@ -51,14 +51,34 @@ def is_ns_gym_env(
     non_stationary_params: dict[str, Any] | None,
     env_type: str | None,
 ) -> bool:
-    """True iff env_id uses the NS- prefix (prefix-only NS routing)."""
+    """Return ``True`` when the env should be routed to the NS-Gym stack.
+
+    Routing is determined solely by the ``NS-`` prefix on ``env_id``. The
+    ``non_stationary_params`` and ``env_type`` arguments are accepted for API
+    symmetry but are not used.
+
+    Args:
+        env_id: Gymnasium env id (e.g. ``"NS-CartPole-v1"``).
+        non_stationary_params: Ignored; present for API compatibility.
+        env_type: Ignored; present for API compatibility.
+
+    Returns:
+        ``True`` if ``env_id`` starts with ``"NS-"``, ``False`` otherwise.
+    """
     _ = non_stationary_params
     _ = env_type
     return env_id.startswith("NS-")
 
 
 def normalize_env_id(env_id: str) -> str:
-    """Strip routing prefixes before calling gym.make(...)."""
+    """Strip the ``NS-`` routing prefix before passing the id to ``gym.make``.
+
+    Args:
+        env_id: Raw env id, possibly prefixed with ``"NS-"``.
+
+    Returns:
+        The id with the ``"NS-"`` prefix removed, or the original id unchanged.
+    """
     if env_id.startswith("NS-"):
         return env_id[3:]
     return env_id
@@ -101,7 +121,24 @@ def _filter_ns_info(info: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_ns_params(infos: dict[str, Any]) -> dict[str, Any]:
-    """Extract non-stationary parameters from env info (Ground Truth Env Change and Ground Truth Delta Change)."""
+    """Extract non-stationary parameter values from NS-Gym ground-truth info.
+
+    Reads ``"Ground Truth Env Change"`` and ``"Ground Truth Delta Change"`` from the
+    raw NS-Gym info dict and converts them to a flat dict of the form:
+
+    - ``"{param}"`` — ``float`` or ``ndarray``: the delta change value for the parameter.
+    - ``"{param}_flag"`` — ``bool`` or ``ndarray``: whether the parameter changed this step.
+
+    Private keys (starting with ``"_"``) are skipped.
+
+    Args:
+        infos: Raw info dict from an NS-Gym wrapper (before :class:`NSGymInterfaceWrapper`
+            processes it).
+
+    Returns:
+        Flat dict with one ``"{param}"`` and one ``"{param}_flag"`` entry per non-private
+        parameter found in ``"Ground Truth Env Change"``.
+    """
     ns_params = {}
     env_change = infos.get("Ground Truth Env Change", {})
     delta_change = infos.get("Ground Truth Delta Change", {})
@@ -115,13 +152,24 @@ def extract_ns_params(infos: dict[str, Any]) -> dict[str, Any]:
 
 
 class NSGymInterfaceWrapper(gym.Wrapper):
-    """Makes an NS-Gym env look like a standard Gymnasium env: observation is only the state, info is extracted NS params.
+    """Adapt an NS-Gym env to the standard Gymnasium single-env API.
 
-    Wraps NS-Gym environments so that:
-    - observation: only the observation state entry (obs["state"] from the inner env).
-    - info: extracted non-stationary params (same shape as extract_ns_params), i.e. keys like "{param}_flag" and "{param}".
+    NS-Gym wrappers return a ``dict`` observation (with a ``"state"`` key) and inject
+    ``"Ground Truth Env Change"`` / ``"Ground Truth Delta Change"`` keys into info.
+    This wrapper strips both of those non-standard aspects so that the env behaves like
+    a normal Gymnasium env:
 
-    Other observation dict keys and raw "Ground Truth *" info keys are not exposed; extraction runs inside the wrapper.
+    - **Observation**: only ``obs["state"]`` is returned; other dict keys are discarded.
+    - **Info**: raw ground-truth keys are replaced with the output of
+      :func:`extract_ns_params` (keys like ``"{param}"`` and ``"{param}_flag"``).
+
+    The :class:`~mouse.envs.base.ObservationSliceWrapper` and the full wrapper stack can
+    then be applied on top without any NS-Gym-specific logic.
+
+    Args:
+        env: An NS-Gym wrapped environment (e.g. the output of
+            ``NSClassicControlWrapper(base_env, ...)``) whose observation space is a
+            ``Dict`` containing a ``"state"`` key.
     """
 
     def __init__(self, env: gym.Env):
@@ -146,10 +194,45 @@ class NSGymInterfaceWrapper(gym.Wrapper):
 
 
 def create_ns_gym_update_functions(ns_gym_config: dict[str, Any]) -> dict[str, Any]:
-    """Build param update functions for ns_gym from config.
+    """Build NS-Gym parameter update functions from a plain config dict.
 
-    ns_gym_config must be a plain dict (e.g. from config loader); nested
-    scheduler_kwargs and update_kwargs must be plain dicts as well.
+    Instantiates a ``(Scheduler, UpdateFunction)`` pair for each physics parameter
+    listed in ``ns_gym_config``. The resulting dict is passed directly to the
+    appropriate NS-Gym wrapper (e.g. ``NSClassicControlWrapper``).
+
+    Config format::
+
+        {
+            "<param_name>": {
+                "scheduler": "continuous" | "periodic" | "random" | "discrete" | "memoryless",
+                "update_function": "no_update" | "increment" | "random_walk" | "oscillating" | ...,
+                "scheduler_kwargs": {...},   # optional
+                "update_kwargs": {...},      # optional
+            },
+            ...
+        }
+
+    Supported schedulers: ``continuous``, ``periodic``, ``random``, ``discrete``,
+    ``memoryless``.
+
+    Supported update functions: ``no_update``, ``increment``, ``random_walk``,
+    ``random_walk_with_drift``, ``random_walk_with_drift_and_trend``,
+    ``deterministic_trend``, ``exponential_decay``, ``geometric_progression``,
+    ``oscillating``, ``step_wise``, ``distribution_no_update``,
+    ``distribution_increment``, ``distribution_decrement``,
+    ``distribution_step_wise``, ``distribution_cyclic``.
+
+    Args:
+        ns_gym_config: Mapping from parameter name to a scheduler + update-function
+            specification. Must be a plain ``dict``; nested dicts must not contain
+            OmegaConf or other structured-config objects.
+
+    Returns:
+        Dict mapping each parameter name to an instantiated NS-Gym update function.
+
+    Raises:
+        TypeError: If ``ns_gym_config`` or any nested value is not a plain ``dict``.
+        ValueError: If an unknown scheduler or update-function name is specified.
     """
     if not isinstance(ns_gym_config, dict):
         raise TypeError(
@@ -238,7 +321,28 @@ def make_ns_env(
     env_kwargs: dict[str, Any] | None = None,
     render: bool = False,
 ) -> gym.Env:
-    """Create one non-stationary environment with persistent RNG update functions."""
+    """Create a single non-stationary Gymnasium env wrapped with NS-Gym.
+
+    Instantiates the base env, wraps it with the appropriate NS-Gym wrapper
+    (selected from ``_NS_WRAPPER`` by ``env_id``), and applies
+    :class:`NSGymInterfaceWrapper` so the result looks like a standard ``gym.Env``.
+    The update functions are persistent — each env instance owns its own RNG state
+    and parameter trajectory.
+
+    Args:
+        env_id: Plain env id (without the ``NS-`` prefix), e.g. ``"CartPole-v1"``.
+        non_stationary_params: Scheduler + update-function config per parameter; see
+            :func:`create_ns_gym_update_functions` for the format.
+        max_steps_per_episode: Passed to ``gym.make(max_episode_steps=...)``.
+        env_kwargs: Extra keyword arguments forwarded to ``gym.make``.
+        render: Set ``render_mode="human"`` on the underlying env.
+
+    Returns:
+        A :class:`NSGymInterfaceWrapper`-wrapped non-stationary env.
+
+    Raises:
+        ValueError: If ``env_id`` has no registered NS-Gym wrapper.
+    """
     env_kwargs = env_kwargs or {}
     if render and "render_mode" not in env_kwargs:
         env_kwargs = {**env_kwargs, "render_mode": "human"}
@@ -260,50 +364,75 @@ def make_ns_env(
     ))
 
 
-class NSVectorEnv(_BaseVectorEnv):
-    """Persistent non-stationary vector env runner with step state."""
+def NSVectorEnv(
+    env_id: str,
+    non_stationary_params: dict[str, Any],
+    seed: int,
+    max_steps_per_episode: int,
+    num_envs: int = 1,
+    env_kwargs: dict[str, Any] | None = None,
+    render: bool = False,
+    env_name: str | None = None,
+    observation_indices: list[int] | None = None,
+    reward_scale: float = 1.0,
+    reward_shift: float = 0.0,
+    q_star_source: dict[str, Any] | None = None,
+) -> gym.vector.VectorEnv:
+    """Create a non-stationary vector env with the full wrapper stack applied.
 
-    def __init__(
-        self,
-        env_id: str,
-        non_stationary_params: dict[str, Any],
-        seed: int,
-        max_steps_per_episode: int,
-        num_envs: int = 1,
-        env_kwargs: dict[str, Any] | None = None,
-        render: bool = False,
-        env_name: str | None = None,
-        observation_indices: list[int] | None = None,
-        reward_scale: float = 1.0,
-        reward_shift: float = 0.0,
-        q_star_source: dict[str, Any] | None = None,
-    ):
-        if num_envs < 1:
-            raise ValueError(f"num_envs must be >= 1, got {num_envs}.")
-        env_kwargs = env_kwargs or {}
+    Each of the ``num_envs`` parallel envs gets its own independent NS-Gym update
+    function instances so their parameter trajectories diverge independently.
 
-        def make_env():
-            env = make_ns_env(
-                env_id=env_id,
-                non_stationary_params=non_stationary_params,
-                max_steps_per_episode=max_steps_per_episode,
-                env_kwargs=env_kwargs,
-                render=render,
-            )
-            if observation_indices is not None:
-                env = ObservationSliceWrapper(env=env, indices=observation_indices)
-            return env
+    Call ``env.reset()`` once before the first ``env.step()``. All step metadata
+    (``episode_step``, ``done``, ``xformed_reward``, ``ns_params``, etc.) is injected
+    into ``info`` by the wrapper stack.
 
-        super().__init__(
-            env_fns=[make_env] * num_envs,
+    Args:
+        env_id: Plain env id (without the ``NS-`` prefix), e.g. ``"CartPole-v1"``.
+        non_stationary_params: Scheduler + update-function config per parameter; see
+            :func:`create_ns_gym_update_functions`.
+        seed: Master seed stored on :class:`~mouse.envs.base.EnvIdentityWrapper`.
+        max_steps_per_episode: Episode budget passed to :class:`~mouse.envs.base.XformedRewardWrapper`.
+        num_envs: Number of parallel envs in the ``SyncVectorEnv``.
+        env_kwargs: Extra keyword arguments forwarded to ``gym.make``.
+        render: Set ``render_mode="human"`` on the underlying env.
+        env_name: Override for ``info["env_name"]``. Defaults to ``env_id``.
+        observation_indices: Slice the observation vector; see
+            :class:`~mouse.envs.base.ObservationSliceWrapper`.
+        reward_scale: Reward multiplier.
+        reward_shift: Reward offset applied after scaling.
+        q_star_source: Expert source config; see :class:`~mouse.envs.envs.EnvConfig`.
+
+    Returns:
+        A fully wrapped ``gym.vector.VectorEnv``.
+
+    Raises:
+        ValueError: If ``num_envs < 1``.
+    """
+    if num_envs < 1:
+        raise ValueError(f"num_envs must be >= 1, got {num_envs}.")
+    env_kwargs = env_kwargs or {}
+
+    def make_env() -> gym.Env:
+        env = make_ns_env(
             env_id=env_id,
-            env_name=env_name if env_name is not None else env_id,
-            num_envs=num_envs,
-            render=render,
-            seed=seed,
+            non_stationary_params=non_stationary_params,
             max_steps_per_episode=max_steps_per_episode,
-            obs_key="observation",
-            reward_scale=reward_scale,
-            reward_shift=reward_shift,
-            q_star_source=q_star_source,
+            env_kwargs=env_kwargs,
+            render=render,
         )
+        if observation_indices is not None:
+            env = ObservationSliceWrapper(env=env, indices=observation_indices)
+        return env
+
+    return build_vector_env_stack(
+        env_fns=[make_env] * num_envs,
+        env_id=env_id,
+        env_name=env_name if env_name is not None else env_id,
+        seed=seed,
+        max_steps_per_episode=max_steps_per_episode,
+        obs_key="observation",
+        reward_scale=reward_scale,
+        reward_shift=reward_shift,
+        q_star_source=q_star_source,
+    )

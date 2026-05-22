@@ -7,9 +7,17 @@ name = "mouse-envs"
 version = "0.1.0"
 description = "Meta-Optimization Using Sequential Experiences — environments"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
+classifiers = [
+ "Development Status :: 3 - Alpha",
+ "Intended Audience :: Science/Research",
+ "Topic :: Scientific/Engineering :: Artificial Intelligence",
+ "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+ "Programming Language :: Python :: 3",
+ "Programming Language :: Python :: 3.12",
+]
 dependencies = [
-    "mouse",
+    "mouse-core",
     "gymnasium[atari,box2d]>=1.2.3",
     "ns_gym>=1.0.10",
     "stable-baselines3>=2.7.0",
@@ -20,8 +28,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pyright",
-    "pytest",
+ "pyright",
+ "pytest",
+ "build>=1.2",
+ "twine>=6.1",
+]
+docs = [
+ "zensical>=0.0.11",
+ "mkdocstrings-python>=1.16",
+ "ghp-import>=2.1",
 ]
 
 [tool.uv.pip]
@@ -30,9 +45,11 @@ extra-index-url = ["https://download.pytorch.org/whl/cu128"]
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["mouse*"]
+[tool.setuptools]
+packages = ["mouse.envs"]
+
+[tool.setuptools.package-dir]
+"mouse.envs" = "src"
 
 [tool.uv.sources]
-mouse = { git = "https://github.com/TODO/mouse" }
+mouse-core = { git = "https://github.com/micahr234/mouse-core.git" }

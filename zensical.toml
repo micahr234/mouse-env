@@ -1,0 +1,68 @@
+[project]
+site_name = "mouse-envs"
+site_description = "Meta-Optimization Using Sequential Experiences — environments"
+site_url = "https://micahr234.github.io/mouse-env/"
+repo_url = "https://github.com/micahr234/mouse-env"
+repo_name = "micahr234/mouse-env"
+docs_dir = "docs"
+
+nav = [
+ {"Home" = "index.md"},
+ {"Guides" = [
+  {"Environments" = "environments.md"},
+  {"Wrapper Stack" = "wrappers.md"},
+  {"Examples" = "examples.md"},
+ ]},
+ {"API Reference" = [
+  {"Envs" = "api/envs.md"},
+  {"Base" = "api/base.md"},
+  {"NS-Gym" = "api/ns_gym.md"},
+  {"Action Star" = "api/action_star.md"},
+  {"Custom Envs" = "api/custom_envs.md"},
+ ]},
+]
+
+[project.theme]
+features = [
+ "navigation.tabs",
+ "navigation.sections",
+ "navigation.top",
+ "search.suggest",
+ "search.highlight",
+ "content.code.copy",
+]
+
+# ── Markdown extensions ───────────────────────────────────────────────────────
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.tables]
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions."pymdownx.details"]
+
+[project.markdown_extensions."pymdownx.superfences"]
+
+[project.markdown_extensions."pymdownx.inlinehilite"]
+
+[project.markdown_extensions."pymdownx.highlight"]
+anchor_linenums = true
+
+# ── mkdocstrings ──────────────────────────────────────────────────────────────
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = true
+show_root_heading = true
+show_symbol_type_heading = true
+show_symbol_type_toc = true
+members_order = "source"
+separate_signature = true
+show_signature_annotations = true
+merge_init_into_class = true
+inherited_members = false
