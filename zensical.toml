@@ -11,6 +11,7 @@ nav = [
  {"Guides" = [
   {"Environments" = "environments.md"},
   {"Wrapper Stack" = "wrappers.md"},
+  {"Rollout Contract" = "rollout_contract.md"},
   {"Examples" = "examples.md"},
  ]},
  {"API Reference" = [
