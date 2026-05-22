@@ -1,4 +1,4 @@
-"""Rollout contract types (v1 core) for mouse-envs ↔ mouse-core."""
+"""Rollout contract types (v1 core) for mouse-env ↔ mouse-core."""
 
 from __future__ import annotations
 

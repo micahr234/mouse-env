@@ -1,6 +1,6 @@
 # Aligning mouse-core with the rollout contract
 
-This page is for **mouse-core** maintainers. The authoritative spec is [rollout_contract.md](rollout_contract.md). mouse-envs implements env construction; mouse-core implements **dataset ingestion and training**. Both should converge on the same row shape.
+This page is for **mouse-core** maintainers. The authoritative spec is [rollout_contract.md](rollout_contract.md). mouse-env implements env construction; mouse-core implements **dataset ingestion and training**. Both should converge on the same row shape.
 
 ---
 
@@ -9,7 +9,7 @@ This page is for **mouse-core** maintainers. The authoritative spec is [rollout_
 A developer should be able to:
 
 1. Read [rollout_contract.md](rollout_contract.md) and understand the seven core fields.
-2. Point mouse-core’s data pipeline at datasets collected from mouse-envs without env-specific code paths.
+2. Point mouse-core’s data pipeline at datasets collected from mouse-env without env-specific code paths.
 3. Use **`env_id`** as the stable key for filtering and multi-env experiments (not informal “names”).
 
 ---

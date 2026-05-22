@@ -1,6 +1,6 @@
 # Environments
 
-mouse-envs supports four categories of environments, all accessed through the unified `make_vector_env` factory. Each returns a wrapped `gym.vector.VectorEnv` with a consistent info dict (see [Wrapper Stack](wrappers.md)).
+mouse-env supports four categories of environments, all accessed through the unified `make_vector_env` factory. Each returns a wrapped `gym.vector.VectorEnv` with a consistent info dict (see [Wrapper Stack](wrappers.md)).
 
 ---
 

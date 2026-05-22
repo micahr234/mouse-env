@@ -37,6 +37,20 @@ There are no formal tests yet — if you add a new feature, a short usage exampl
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 
+## Releasing to PyPI
+
+Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC).
+
+### Publishing a version
+
+To publish a release:
+
+1. Bump `version` in `pyproject.toml` on `main`.
+2. Commit, push, and create an annotated tag matching the version (e.g. `v0.1.1` for version `0.1.1`).
+3. Push the tag: `git push origin v0.1.1` — the Publish workflow runs on tag push.
+
+You can also run the workflow manually from the Actions tab (**Publish** → **Run workflow**).
+
 ## Questions
 
 Open a GitHub Discussion or issue.
