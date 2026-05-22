@@ -43,10 +43,18 @@ docs = [
 environments = ["sys_platform == 'linux'"]
 
 [tool.setuptools]
-packages = ["mouse.envs"]
+packages = [
+    "mouse.envs",
+    "mouse.envs.stack",
+    "mouse.envs.backends",
+    "mouse.envs.tabular",
+]
 
 [tool.setuptools.package-dir]
 "mouse.envs" = "src"
+"mouse.envs.stack" = "src/stack"
+"mouse.envs.backends" = "src/backends"
+"mouse.envs.tabular" = "src/tabular"
 
 [tool.uv.sources]
 mouse-core = { git = "https://github.com/micahr234/mouse-core.git" }

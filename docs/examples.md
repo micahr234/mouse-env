@@ -3,7 +3,7 @@
 ## Collecting rollouts
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="CartPole-v1",
@@ -44,7 +44,7 @@ for step in range(1000):
 ## NS-Gym with oscillating pole length
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="NS-CartPole-v1",
@@ -86,7 +86,7 @@ for _ in range(500):
 ## Custom FrozenLake with Q* expert
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="Custom-FrozenLake-v1",
@@ -124,7 +124,7 @@ for _ in range(200):
 ## Atari with preprocessing
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="ALE/Pong-v5",

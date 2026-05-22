@@ -45,7 +45,7 @@ pip install mouse-envs
 ## Quick start
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="CartPole-v1",

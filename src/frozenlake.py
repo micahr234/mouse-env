@@ -12,9 +12,10 @@ import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
+from mouse.envs.tabular.value_iteration import value_iteration_gymnasium_p
 from mouse.utils import map_payload_to_json_str
 
-CUSTOM_FROZENLAKE_ENV_ID = "Custom-FrozenLake-v1"
+from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID
 
 
 class CustomFrozenLakeEnv(FrozenLakeEnv):
@@ -417,34 +418,17 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
             ``float64`` array of shape ``(num_states, 4)`` — optimal Q-values for
             every (state, action) pair under the current map.
         """
-        g = float(self.gamma)
         n_s = int(self.nrow * self.ncol)
-        n_a = 4
-        q = np.zeros((n_s, n_a), dtype=np.float64)
-        P = self.P
-        for _ in range(int(max_iter)):
-            v = q.max(axis=1)
-            q_new = np.zeros((n_s, n_a), dtype=np.float64)
-            for s in range(n_s):
-                for a in range(n_a):
-                    acc = 0.0
-                    for prob, next_s, r, done in P[s][a]:
-                        p = float(prob)
-                        ns = int(next_s)
-                        rr = float(r)
-                        if done and ns in self._goal_rewards_by_state:
-                            rr = float(self._goal_rewards_by_state[ns])
-                        rr += self._step_penalty
-                        if done:
-                            acc += p * rr
-                        else:
-                            acc += p * (rr + g * v[ns])
-                    q_new[s, a] = acc
-            if np.max(np.abs(q_new - q)) <= float(tolerance):
-                q = q_new
-                break
-            q = q_new
-        return q
+        return value_iteration_gymnasium_p(
+            self.P,
+            n_states=n_s,
+            n_actions=4,
+            gamma=float(self.gamma),
+            step_penalty=float(self._step_penalty),
+            goal_rewards_by_state=self._goal_rewards_by_state,
+            max_iter=max_iter,
+            tolerance=tolerance,
+        )
 
     def _optimal_action_for_obs(self, obs: int) -> int:
         if self._q_table is None:

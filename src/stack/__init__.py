@@ -1,15 +1,14 @@
-"""Backward-compatible re-exports; prefer :mod:`mouse.envs.stack`."""
+"""MOUSE rollout wrapper stack."""
 
-from mouse.envs.stack import (
+from mouse.envs.stack.obs import ObservationSliceWrapper, resolve_obs_key
+from mouse.envs.stack.wrappers import (
     DoneEncodingWrapper,
     EnvIdentityWrapper,
     EpisodeStatisticsWrapper,
-    ObservationSliceWrapper,
     QStarWrapper,
     StepCounterWrapper,
     XformedRewardWrapper,
     build_vector_env_stack,
-    resolve_obs_key,
 )
 
 __all__ = [

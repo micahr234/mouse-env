@@ -9,7 +9,7 @@ mouse-envs supports four categories of environments, all accessed through the un
 Standard discrete-action Gymnasium environments — CartPole, MountainCar, LunarLander, Acrobot, and similar.
 
 ```python
-from mouse.envs.envs import EnvConfig, make_vector_env
+from mouse.envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     env_id="CartPole-v1",
