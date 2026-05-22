@@ -4,7 +4,7 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for use. APIs will change without notice.
 
-**mouse-envs** is the environment package for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs, and rich rollout metadata (episode stats, expert Q-values) used to collect training data for MOUSE agents.
+**mouse-envs** is the environment package for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs, and rollout metadata for training data collection.
 
 ## Install
 
@@ -12,21 +12,44 @@
 pip install mouse-envs
 ```
 
-For the latest development version:
+Development:
 
 ```bash
-pip install "git+https://github.com/micahr234/mouse-env.git"
+git clone https://github.com/micahr234/mouse-env.git
+cd mouse-env
+source scripts/install.sh
+```
+
+## Quick start
+
+```python
+from mouse.envs import EnvConfig, make_vector_env
+
+env = make_vector_env(EnvConfig.cartpole(num_envs=4, seed=0))
+obs, info = env.reset()
+
+for _ in range(1000):
+    obs, reward, terminated, truncated, info = env.step(env.sample_random_actions())
 ```
 
 ## Documentation
 
-📖 **[micahr234.github.io/mouse-env](https://micahr234.github.io/mouse-env/)**
+All docs are Markdown in [`docs/`](docs/) (read on GitHub or in the repo):
 
-The **[rollout contract](docs/rollout_contract.md)** defines the data mouse-envs exposes to [mouse-core](https://github.com/micahr234/mouse-core) (`env_id`, episode/step indices, action/observation/reward dicts).
+| Doc | Description |
+|-----|-------------|
+| [guide.md](docs/guide.md) | Overview, layout, quick start |
+| [rollout_contract.md](docs/rollout_contract.md) | **mouse-envs ↔ mouse-core** step schema (`env_id`, dicts, rewards) |
+| [environments.md](docs/environments.md) | Env types and `EnvConfig` options |
+| [examples.md](docs/examples.md) | Rollouts, NS-Gym, Atari, Q* |
+| [wrappers.md](docs/wrappers.md) | Current wrapper stack and `info` keys |
+| [mouse_core_alignment.md](docs/mouse_core_alignment.md) | Updating mouse-core for the contract |
+
+API reference: Python docstrings in `src/` (e.g. `EnvConfig`, `make_vector_env`).
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

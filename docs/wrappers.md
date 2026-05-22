@@ -1,4 +1,6 @@
-# Wrapper Stack
+# Wrapper stack
+
+> **Note:** The target rollout shape for mouse-core is [rollout_contract.md](rollout_contract.md). This page describes **what the code emits today** (legacy `info` keys).
 
 Every environment returned by `make_vector_env` passes through a standard vector wrapper stack built by `build_vector_env_stack`. The wrappers are composed from innermost to outermost as follows:
 
