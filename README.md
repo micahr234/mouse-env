@@ -32,6 +32,10 @@ for _ in range(1000):
     obs, reward, terminated, truncated, info = env.step(env.sample_random_actions())
 ```
 
+## Examples
+
+Runnable scripts live in [`examples/`](examples/). See [docs/examples.md](docs/examples.md) for descriptions and inline code.
+
 ## Documentation
 
 All docs are Markdown in [`docs/`](docs/) (read on GitHub or in the repo):
@@ -41,7 +45,7 @@ All docs are Markdown in [`docs/`](docs/) (read on GitHub or in the repo):
 | [guide.md](docs/guide.md) | Overview, layout, quick start |
 | [rollout_contract.md](docs/rollout_contract.md) | **mouse-env ↔ mouse-core** step schema (`env_id`, dicts, rewards) |
 | [environments.md](docs/environments.md) | Env types and `EnvConfig` options |
-| [examples.md](docs/examples.md) | Rollouts, NS-Gym, Atari, Q* |
+| [examples.md](docs/examples.md) | Runnable scripts in [`examples/`](examples/) — NS-Gym, Atari, Q*, partial observability, reward shaping |
 | [wrappers.md](docs/wrappers.md) | Current wrapper stack and `info` keys |
 | [mouse_core_alignment.md](docs/mouse_core_alignment.md) | Updating mouse-core for the contract |
 

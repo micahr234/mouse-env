@@ -45,7 +45,7 @@ Legacy keys still emitted by the stack (`env_name`, `episode_step`, `xformed_rew
 
 ## Examples
 
-[examples.md](examples.md) — NS-Gym, Atari, expert Q*, partial observability.
+[examples.md](examples.md) — runnable scripts in [`examples/`](../examples/) covering NS-Gym, Atari, expert Q*, partial observability, and reward shaping.
 
 ## mouse-core integration
 

@@ -1,31 +1,30 @@
 # Examples
 
+Runnable scripts live in [`examples/`](../examples/). Each script is self-contained and can be run directly:
+
+```bash
+python examples/01_random_rollout.py
+```
+
+| Script | Description |
+|--------|-------------|
+| [01_random_rollout.py](../examples/01_random_rollout.py) | Basic vector rollout with CartPole |
+| [02_q_star_expert.py](../examples/02_q_star_expert.py) | FrozenLake with Q* expert policy |
+| [03_ns_gym_oscillating.py](../examples/03_ns_gym_oscillating.py) | Non-stationary CartPole with oscillating pole |
+| [04_atari_preprocessing.py](../examples/04_atari_preprocessing.py) | Atari Pong with frame preprocessing |
+| [05_partial_observability.py](../examples/05_partial_observability.py) | CartPole with partial observations |
+| [06_reward_shaping.py](../examples/06_reward_shaping.py) | MountainCar with reward scale/shift |
+
+---
+
 ## Collecting rollouts
+
+<!-- see examples/01_random_rollout.py -->
 
 ```python
 from mouse.envs import EnvConfig, make_vector_env
 
-cfg = EnvConfig(
-    env_id="CartPole-v1",
-    seed=0,
-    num_envs=4,
-    max_episode_steps=500,
-    kwargs=None,
-    render=False,
-    non_stationary_params=None,
-    num_steps=None,
-    action_source_loop_prob_schedule=None,
-    action_source_episode_prob_schedule=None,
-    q_star_source=None,
-    action_source="random",
-    action_source_temperature=1.0,
-    split="train",
-    env_type="plain",
-    atari_preprocessing=None,
-    atari_preprocessing_kwargs=None,
-    observation_indices=None,
-)
-
+cfg = EnvConfig.cartpole(seed=0, num_envs=4, max_episode_steps=500)
 env = make_vector_env(cfg)
 obs, info = env.reset()
 
@@ -43,16 +42,14 @@ for step in range(1000):
 
 ## NS-Gym with oscillating pole length
 
+<!-- see examples/03_ns_gym_oscillating.py -->
+
 ```python
 from mouse.envs import EnvConfig, make_vector_env
 
-cfg = EnvConfig(
-    env_id="NS-CartPole-v1",
+cfg = EnvConfig.ns_cartpole(
     seed=42,
     num_envs=2,
-    max_episode_steps=500,
-    kwargs=None,
-    render=False,
     non_stationary_params={
         "length": {
             "scheduler": "ContinuousScheduler",
@@ -60,17 +57,6 @@ cfg = EnvConfig(
             "init_value": 0.5,
         },
     },
-    num_steps=None,
-    action_source_loop_prob_schedule=None,
-    action_source_episode_prob_schedule=None,
-    q_star_source=None,
-    action_source="random",
-    action_source_temperature=1.0,
-    split="train",
-    env_type="ns_gym",
-    atari_preprocessing=None,
-    atari_preprocessing_kwargs=None,
-    observation_indices=None,
 )
 
 env = make_vector_env(cfg)
@@ -85,30 +71,13 @@ for _ in range(500):
 
 ## Custom FrozenLake with Q* expert
 
+<!-- see examples/02_q_star_expert.py -->
+
 ```python
+import numpy as np
 from mouse.envs import EnvConfig, make_vector_env
 
-cfg = EnvConfig(
-    env_id="Custom-FrozenLake-v1",
-    seed=7,
-    num_envs=1,
-    max_episode_steps=200,
-    kwargs={"map_size": 8, "is_slippery": True},
-    render=False,
-    non_stationary_params=None,
-    num_steps=None,
-    action_source_loop_prob_schedule=None,
-    action_source_episode_prob_schedule=None,
-    q_star_source={"type": "env"},
-    action_source="q_star",
-    action_source_temperature=0.0,
-    split="train",
-    env_type="plain",
-    atari_preprocessing=None,
-    atari_preprocessing_kwargs=None,
-    observation_indices=None,
-)
-
+cfg = EnvConfig.frozenlake(seed=7, num_envs=1)
 env = make_vector_env(cfg)
 obs, info = env.reset()
 
@@ -123,6 +92,8 @@ for _ in range(200):
 
 ## Atari with preprocessing
 
+<!-- see examples/04_atari_preprocessing.py -->
+
 ```python
 from mouse.envs import EnvConfig, make_vector_env
 
@@ -131,20 +102,10 @@ cfg = EnvConfig(
     seed=0,
     num_envs=4,
     max_episode_steps=10000,
-    kwargs=None,
-    render=False,
-    non_stationary_params=None,
-    num_steps=None,
-    action_source_loop_prob_schedule=None,
-    action_source_episode_prob_schedule=None,
-    q_star_source=None,
-    action_source="random",
-    action_source_temperature=1.0,
-    split="train",
     env_type="plain",
     atari_preprocessing=True,
     atari_preprocessing_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 30},
-    observation_indices=None,
+    # ... other fields omitted for brevity
 )
 
 env = make_vector_env(cfg)
@@ -155,15 +116,46 @@ obs, info = env.reset()
 
 ---
 
+## Partial observability
+
+<!-- see examples/05_partial_observability.py -->
+
+```python
+from mouse.envs import EnvConfig, make_vector_env
+
+# CartPole obs: 0=cart_pos, 1=cart_vel, 2=pole_angle, 3=pole_vel
+cfg = EnvConfig.cartpole(seed=0, num_envs=2, observation_indices=[0, 2])
+env = make_vector_env(cfg)
+obs, info = env.reset()
+print(obs.shape)  # (2, 2) — only cart position and pole angle
+```
+
+---
+
 ## Reward shaping
+
+<!-- see examples/06_reward_shaping.py -->
 
 Use `reward_scale` and `reward_shift` to transform rewards without affecting `episode_cum_reward` (which always reflects raw returns):
 
 ```python
+from mouse.envs import EnvConfig, make_vector_env
+
 cfg = EnvConfig(
     env_id="MountainCar-v0",
-    reward_scale=0.1,   # shrink rewards
-    reward_shift=1.0,   # shift up
-    ...
+    seed=0,
+    num_envs=1,
+    max_episode_steps=200,
+    env_type="plain",
+    reward_scale=0.1,   # raw reward × 0.1
+    reward_shift=1.0,   # then + 1.0
+    # ... other fields omitted for brevity
 )
+
+env = make_vector_env(cfg)
+obs, info = env.reset()
+
+obs, reward, terminated, truncated, info = env.step(env.sample_random_actions())
+raw_r     = reward[0]
+xformed_r = info["xformed_reward"][0]  # raw * scale + shift
 ```
