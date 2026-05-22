@@ -1,6 +1,6 @@
 # Guide
 
-mouse-envs builds **vector Gymnasium environments** for [mouse-core](https://github.com/micahr234/mouse-core) with a shared wrapper stack and rollout metadata.
+mouse-env builds **vector Gymnasium environments** for [mouse-core](https://github.com/micahr234/mouse-core) with a shared wrapper stack and rollout metadata.
 
 ## Quick start
 

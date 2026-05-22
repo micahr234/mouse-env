@@ -17,7 +17,7 @@ jobs:
   publish:
     environment:
       name: pypi
-      url: https://pypi.org/project/mouse-envs/
+      url: https://pypi.org/project/mouse-env/
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

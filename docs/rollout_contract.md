@@ -2,7 +2,7 @@
 
 This document defines what a **MouseEnvironment** must produce so **mouse-core** can train and evaluate without knowing whether the underlying world is CartPole, Atari, or a custom tabular MDP.
 
-The contract is intentionally small: a fixed **core** record every step, plus an optional **extensions** block. Everything else (wrapper mechanics, Gymnasium ids, NS-Gym physics) stays inside mouse-envs.
+The contract is intentionally small: a fixed **core** record every step, plus an optional **extensions** block. Everything else (wrapper mechanics, Gymnasium ids, NS-Gym physics) stays inside mouse-env.
 
 ---
 
@@ -15,7 +15,7 @@ Gymnasium gives you `reset` / `step`, observations, rewards, and termination fla
 - **Modalities** (discrete, continuous, image) without separate pipelines per env type.
 - A stable **environment identifier** on every row so multi-env and multi-dataset runs do not rely on implicit order or display names.
 
-mouse-envs builds envs that satisfy this contract; mouse-core reads datasets (or live buffers) that follow it. If both sides agree on the spec below, either repository can evolve independently behind a versioned interface.
+mouse-env builds envs that satisfy this contract; mouse-core reads datasets (or live buffers) that follow it. If both sides agree on the spec below, either repository can evolve independently behind a versioned interface.
 
 ---
 
@@ -105,7 +105,7 @@ At least two floats per step:
 | Key | Required | Meaning |
 |-----|----------|---------|
 | `step` | yes | Raw environment reward for this transition (unaltered env signal; scale/shift for logging can be documented separately). |
-| `episodic` | yes | MOUSE training signal derived from the episode so far (running episodic / normalised quantity — today implemented as `xformed_reward` in mouse-envs). |
+| `episodic` | yes | MOUSE training signal derived from the episode so far (running episodic / normalised quantity — today implemented as `xformed_reward` in mouse-env). |
 
 Example: `{"step": 1.0, "episodic": 0.04}`.
 
@@ -175,7 +175,7 @@ mouse-core changes (when you adopt v1):
 
 ---
 
-## mouse-envs implementation status
+## mouse-env implementation status
 
 | Contract | Status |
 |----------|--------|
@@ -203,4 +203,4 @@ See `mouse.envs.contract`:
 
 ## Versioning
 
-This document describes **contract v1 (core)**. When the shape changes, bump the version in this file and in `contract.py` so mouse-envs and mouse-core can gate behaviour (`contract_version=1` in dataset metadata, for example).
+This document describes **contract v1 (core)**. When the shape changes, bump the version in this file and in `contract.py` so mouse-env and mouse-core can gate behaviour (`contract_version=1` in dataset metadata, for example).

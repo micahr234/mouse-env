@@ -4,12 +4,12 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for use. APIs will change without notice.
 
-**mouse-envs** is the environment package for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs, and rollout metadata for training data collection.
+**mouse-env** is the environment package for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs, and rollout metadata for training data collection.
 
 ## Install
 
 ```bash
-pip install mouse-envs
+pip install mouse-env
 ```
 
 Development:
@@ -39,7 +39,7 @@ All docs are Markdown in [`docs/`](docs/) (read on GitHub or in the repo):
 | Doc | Description |
 |-----|-------------|
 | [guide.md](docs/guide.md) | Overview, layout, quick start |
-| [rollout_contract.md](docs/rollout_contract.md) | **mouse-envs ↔ mouse-core** step schema (`env_id`, dicts, rewards) |
+| [rollout_contract.md](docs/rollout_contract.md) | **mouse-env ↔ mouse-core** step schema (`env_id`, dicts, rewards) |
 | [environments.md](docs/environments.md) | Env types and `EnvConfig` options |
 | [examples.md](docs/examples.md) | Rollouts, NS-Gym, Atari, Q* |
 | [wrappers.md](docs/wrappers.md) | Current wrapper stack and `info` keys |
