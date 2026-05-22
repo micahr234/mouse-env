@@ -22,6 +22,8 @@ pip install "git+https://github.com/micahr234/mouse-env.git"
 
 📖 **[micahr234.github.io/mouse-env](https://micahr234.github.io/mouse-env/)**
 
+The **[rollout contract](docs/rollout_contract.md)** defines the data mouse-envs exposes to [mouse-core](https://github.com/micahr234/mouse-core) (`env_id`, episode/step indices, action/observation/reward dicts).
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).

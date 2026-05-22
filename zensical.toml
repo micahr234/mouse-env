@@ -12,6 +12,7 @@ nav = [
   {"Environments" = "environments.md"},
   {"Wrapper Stack" = "wrappers.md"},
   {"Rollout Contract" = "rollout_contract.md"},
+  {"mouse-core alignment" = "mouse_core_alignment.md"},
   {"Examples" = "examples.md"},
  ]},
  {"API Reference" = [

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
+from typing import Any, TypedDict
+
+CONTRACT_VERSION = 1
 
 
 class RewardDict(TypedDict):
@@ -15,7 +17,7 @@ class RewardDict(TypedDict):
 class RolloutStepCore(TypedDict):
     """Required logical fields for one env at one step (single-env view)."""
 
-    env_name: str
+    env_id: str
     episode_index: int
     step_index: int
     action: dict[str, Any]
@@ -39,24 +41,10 @@ DONE_RUNNING = 0
 DONE_TERMINATED = 1
 DONE_TRUNCATED = 2
 
-# Legacy info keys still emitted by the wrapper stack (deprecation path).
-LEGACY_INFO_KEYS = frozenset(
-    {
-        "env_name",
-        "env_idx",
-        "episode_step",
-        "global_step",
-        "xformed_reward",
-        "done",
-        "episode_length",
-        "episode_cum_reward",
-        "metadata_q_star",
-    }
-)
-
+# v1 core keys expected in vector info (batched).
 CORE_INFO_KEYS_V1 = frozenset(
     {
-        "env_name",
+        "env_id",
         "episode_index",
         "step_index",
         "action",
@@ -65,6 +53,23 @@ CORE_INFO_KEYS_V1 = frozenset(
         "reward",
     }
 )
+
+# Legacy info keys still emitted by the wrapper stack (migration).
+LEGACY_INFO_KEYS = frozenset(
+    {
+        "env_name",  # same string as env_id today; prefer env_id
+        "env_idx",
+        "episode_step",  # 1-based; replaced by step_index (0-based)
+        "global_step",
+        "xformed_reward",  # moved to reward["episodic"]
+        "done",
+        "episode_length",
+        "episode_cum_reward",
+        "metadata_q_star",
+    }
+)
+
+EXTENSIONS_INFO_KEY = "extensions"
 
 
 class RolloutExtensions(TypedDict, total=False):

@@ -2,7 +2,9 @@
 
 <p align="center"><img src="mouse.png" alt="MOUSE" width="400"/></p>
 
-**mouse-envs** is the environment package for [MOUSE](https://micahr234.github.io/mouse-core/), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs (FrozenLake, SyntheticEnv), and rich rollout metadata (episode stats, expert Q-values) used to collect training data for MOUSE agents.
+**mouse-envs** is the environment package for [MOUSE](https://micahr234.github.io/mouse-core/), a modular PyTorch library for in-context reinforcement learning. It provides Gymnasium vector environments, NS-Gym non-stationary wrappers, custom tabular MDPs (FrozenLake, SyntheticEnv), and rich rollout metadata used to collect training data for MOUSE agents.
+
+The interface between this package and mouse-core is the **[rollout contract](rollout_contract.md)** (v1): a small, ordered set of fields per step (`env_id`, episode/step indices, action and observation dicts, `done`, reward dict). Read that document first if you are integrating a new env or updating mouse-core.
 
 ---
 
@@ -28,7 +30,7 @@ Every environment is wrapped in a standard stack that injects into `info`:
 | `global_step` | Monotonically increasing step count |
 | `xformed_reward` | Normalised reward used for model training |
 | `done` | 0 = running, 1 = terminated, 2 = truncated |
-| `env_name` | Environment name string |
+| `env_id` | Environment identifier (contract v1; today often `env_name` in code) |
 | `env_idx` | Per-env integer index |
 | `metadata_q_star` | Expert Q-values (when a `q_star_source` is configured) |
 
