@@ -4,31 +4,22 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
-**mouse-env** is the environment layer for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning (ICRL).
+**mouse-env** is the environment layer for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning.
 
 ## Why mouse-env exists
 
-In standard RL, episodes are usually treated as independent rollouts:
+In standard RL, episodes are independent — the algorithm resets, collects one episode, and repeats. What happened in episode 1 has no bearing on episode 2.
 
-1. Reset environment.
-2. Collect one episode.
-3. Update model weights.
-4. Repeat.
+In **in-context RL**, the policy is a sequence model whose context window spans **multiple episodes**. The model adapts its behavior from recent history in a single forward pass, without gradient updates between episodes.
 
-In **in-context RL**, the policy is a sequence model whose context window spans **multiple episodes**. The model can adapt behavior from recent history in a single forward pass, without gradient updates between episodes.
-
-mouse-env is built for this regime: experience is emitted as a continuous stream where episode boundaries are events in the stream, not control-flow branches in user code.
+mouse-env is built for this regime. You call `step()` in a loop forever — the environment resets itself when an episode ends and keeps going. Episode boundaries show up as `done=1` or `done=2` in the data, and the following step delivers the fresh starting observation. Your training loop never needs to detect episode endings or call `reset()` itself.
 
 ## Core API
 
-The main contract is simple:
+Using mouse-env looks like this:
 
 - Build one vectorized environment with `make_vector_env(...)`
-- Call `step(actions)` in a loop
-- Receive a fixed output shape every step:
-  - `data`
-  - `metadata`
-  - `metrics`
+- Call `step(actions)` in a loop; receive `data`, `metadata`, and `metrics` every step
 
 For each sub-environment index `i`:
 
@@ -80,8 +71,7 @@ env.close()
 ### Important stepping semantics
 
 - **Use `step()` only — do not call `reset()`.**
-  - This is an intentional API behavior change from typical Gym-style loops: `mouse-env` handles resets internally.
-  - The first `step()` performs an internal reset and returns initial observations with `reward=0`, `done=0`, `time=0`.
+  - The first `step()` performs an internal reset and returns the initial observation with `reward=0`, `done=0`, `time=0`.
   - Actions passed on that first call are ignored.
 - **Autoreset is built in.**
   - After termination/truncation, the next emitted transition includes the reset observation (`reward=0`, `done=0`, `time=0`) before normal stepping resumes.
