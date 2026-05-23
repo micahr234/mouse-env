@@ -16,9 +16,6 @@ OBS_KEY_DISCRETE = "discrete"
 OBS_KEY_CONTINUOUS = "continuous"
 OBS_KEY_IMAGE = "image"
 
-REWARD_KEY_STEP = "step"
-REWARD_KEY_EPISODIC = "episodic"
-
 TIME_KEY = "time"
 
 DONE_RUNNING = 0
@@ -26,38 +23,32 @@ DONE_TERMINATED = 1
 DONE_TRUNCATED = 2
 
 
-class RewardDict(TypedDict):
-    """Per-step reward payload (documentation only — runtime type is a nested dict of tensors)."""
-
-    step: float
-    episodic: float
-
-
 class RolloutStepCore(TypedDict):
     """Logical fields for one env at one step (single-env view).
 
     At runtime each record is a ``TensorDict`` with ``batch_size=[]``.
-    ``group_id`` and ``episode_index`` live in ``metadata``, not inside each TensorDict.
+    Per-env context at the same index lives in ``metadata`` (``group_id``, ``episode_index``, …).
     """
 
     time: int
     observation: dict[str, Any]
     done: int
-    reward: RewardDict
+    reward: float
 
 
 class RolloutMetrics(TypedDict):
-    """Batch-level episode statistics."""
+    """Per-env episode statistics for the current step (``metrics[i]`` view)."""
 
-    episode_cum_reward: Any
-    episode_length: Any
+    episode_cum_reward: list[float]
+    episode_length: list[float]
 
 
 class RolloutMetadata(TypedDict, total=False):
-    """Batch-level metadata returned alongside metrics."""
+    """Per-env fields at the same index as ``data`` (``metadata[i]`` view)."""
 
     group_ids: list[str]
     episode_index: Any
+    reward_episodic: Any
     q_star: Any
     ns_params: Any
 
@@ -65,9 +56,11 @@ class RolloutMetadata(TypedDict, total=False):
 class MouseVectorEnv:
     """Wraps a Gymnasium vector env and returns (list[TensorDict], metadata, metrics).
 
-    Each TensorDict in the returned list corresponds to one parallel environment index
-    (``batch_size=[]`` — a scalar TensorDict with no batch dimension).
-    The field layout follows the public step API documented in docs/guide.md.
+    Each TensorDict in ``data`` is the per-step payload you generally feed to an LLM or
+    other sequence model. ``metadata`` and ``metrics`` are aligned at the same env index
+    but are not model input by default — ``metadata`` is commonly used to support training,
+    analyze performance, and inspect rollouts; ``metrics`` holds episode finish stats for
+    evaluation and logging.
 
     Call ``step()`` only — there is no public ``reset()``. The first ``step()`` after
     construction performs an internal reset and returns initial observations with dummy
@@ -81,23 +74,22 @@ class MouseVectorEnv:
     Every record contains the same keys:
         time (int64),
         observation (dict with any combination of "discrete", "continuous", and "image" tensors),
-        reward — dict with "step" and "episodic" float32 tensors,
+        reward — float32 tensor (raw per-step reward),
         done   — int64  (0=running, 1=terminated, 2=truncated)
 
-    Actions are input to ``step()`` only; they are not echoed in ``data``.
+    Actions are input to ``step()`` only (not echoed in ``data``). Pass ``list[TensorDict]``;
+    each ``actions[i]["action"]`` is a dict with ``"discrete"`` or ``"continuous"`` tensors.
 
-    ``group_id`` and ``episode_index`` are NOT stored inside each TensorDict.
-    They are returned in ``metadata`` as batch-level fields.
+    ``metadata`` uses the same env index as ``data`` (``metadata[i]``):
+        group_ids:       list[str]                 — ``metadata["group_ids"][i]``
+        episode_index:   int64[num_envs]           — ``metadata["episode_index"][i]``
+        reward_episodic: float32[num_envs]         — normalised training signal; ``metadata["reward_episodic"][i]``
+        q_star:          float64[num_envs, action_dim] (optional) — ``metadata["q_star"][i]``
+        ns_params:       any                      (optional, NS-Gym envs only)
 
-    ``metrics`` holds episode statistics:
-        episode_cum_reward: float64[num_envs]   — NaN for running envs, filled on done != 0
-        episode_length:     float64[num_envs]   — NaN for running envs
-
-    ``metadata`` holds batch-level context:
-        group_ids:     list[str]                 — one per env index (always present)
-        episode_index: int64[num_envs]           — monotonic episode counter per stream (always present)
-        q_star:        float64[num_envs, action_dim] (optional, when q_star_source set)
-        ns_params:     any                      (optional, NS-Gym envs only)
+    ``metrics`` uses the same env index as ``data`` (``metrics[i]``):
+        episode_cum_reward: list[float]   — empty unless env ``i`` finished on this step
+        episode_length:     list[float]   — one value per finish on this step
 
     ``time`` is 0-based within the episode. Internal ``info["episode_time"]`` from
     StepCounterWrapper is 1-based after the first real step; ``MouseVectorEnv`` maps this
@@ -132,7 +124,7 @@ class MouseVectorEnv:
         return getattr(self._env, "action_dim", 0)
 
     def sample_random_actions(self) -> list[TensorDict]:
-        """Sample random actions and return them as ``list[TensorDict]``."""
+        """Sample random actions as ``list[TensorDict]`` with ``action`` dict keys."""
         raw = self._env.sample_random_actions()
         space = self._env.single_action_space
         tds: list[TensorDict] = []
@@ -145,7 +137,7 @@ class MouseVectorEnv:
             tds.append(TensorDict({"action": action}, batch_size=[]))
         return tds
 
-    def step(self, actions: list[TensorDict]) -> tuple[list[TensorDict], dict, dict]:
+    def step(self, actions: list[TensorDict]) -> tuple[list[TensorDict], dict, list[dict]]:
         """Step all envs; return ``(data, metadata, metrics)``.
 
         On the first call after construction, performs an internal reset and returns
@@ -192,30 +184,39 @@ class MouseVectorEnv:
             return {"image": torch.tensor(raw, dtype=torch.float32)}
         return {"continuous": torch.tensor(raw, dtype=torch.float32)}
 
-    def _build_metrics(self, info: dict, *, nan_episode_stats: bool = False) -> dict:
-        nan_arr = np.full(self.num_envs, np.nan, dtype=np.float64)
-        if nan_episode_stats:
-            return {
-                "episode_cum_reward": nan_arr.copy(),
-                "episode_length": nan_arr.copy(),
+    def _build_metrics(self, info: dict, *, empty_episode_stats: bool = False) -> list[dict]:
+        if empty_episode_stats:
+            return [
+                {"episode_cum_reward": [], "episode_length": []}
+                for _ in range(self.num_envs)
+            ]
+        cum_reward = (
+            np.asarray(info["episode_cum_reward"], dtype=np.float64)
+            if "episode_cum_reward" in info
+            else np.full(self.num_envs, np.nan, dtype=np.float64)
+        )
+        length = (
+            np.asarray(info["episode_length"], dtype=np.float64)
+            if "episode_length" in info
+            else np.full(self.num_envs, np.nan, dtype=np.float64)
+        )
+        return [
+            {
+                "episode_cum_reward": (
+                    [float(cum_reward[i])] if not np.isnan(cum_reward[i]) else []
+                ),
+                "episode_length": (
+                    [float(length[i])] if not np.isnan(length[i]) else []
+                ),
             }
-        return {
-            "episode_cum_reward": (
-                np.asarray(info["episode_cum_reward"], dtype=np.float64)
-                if "episode_cum_reward" in info
-                else nan_arr.copy()
-            ),
-            "episode_length": (
-                np.asarray(info["episode_length"], dtype=np.float64)
-                if "episode_length" in info
-                else nan_arr.copy()
-            ),
-        }
+            for i in range(self.num_envs)
+        ]
 
-    def _build_metadata(self, info: dict) -> dict:
+    def _build_metadata(self, info: dict, *, reward_episodic: np.ndarray) -> dict:
         metadata: dict = {
             "group_ids": list(self._group_ids),
             "episode_index": np.asarray(info["episode_index"], dtype=np.int64),
+            "reward_episodic": np.asarray(reward_episodic, dtype=np.float32),
         }
         if "metadata_q_star" in info:
             metadata["q_star"] = np.asarray(info["metadata_q_star"], dtype=np.float64)
@@ -238,7 +239,7 @@ class MouseVectorEnv:
         *,
         reward: Any = None,
         is_reset: bool,
-    ) -> tuple[list[TensorDict], dict, dict]:
+    ) -> tuple[list[TensorDict], dict, list[dict]]:
         reset_mask = self._reset_frame_mask(info, is_reset=is_reset)
 
         if is_reset:
@@ -261,18 +262,11 @@ class MouseVectorEnv:
                         int(info["episode_time"][i]), dtype=torch.int64
                     ),
                     "observation": self._obs_for_index(obs, i),
-                    "reward": {
-                        REWARD_KEY_STEP: torch.tensor(
-                            float(reward_arr[i]), dtype=torch.float32
-                        ),
-                        REWARD_KEY_EPISODIC: torch.tensor(
-                            float(xformed_arr[i]), dtype=torch.float32
-                        ),
-                    },
+                    "reward": torch.tensor(float(reward_arr[i]), dtype=torch.float32),
                     "done": torch.tensor(int(done_arr[i]), dtype=torch.int64),
                 },
                 batch_size=[],
             )
             records.append(td)
-        metrics = self._build_metrics(info, nan_episode_stats=is_reset)
-        return records, self._build_metadata(info), metrics
+        metrics = self._build_metrics(info, empty_episode_stats=is_reset)
+        return records, self._build_metadata(info, reward_episodic=xformed_arr), metrics

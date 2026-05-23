@@ -28,7 +28,7 @@ cfg = EnvConfig(
 env = make_vector_env(cfg)
 ```
 
-`make_vector_env` returns a `MouseVectorEnv`. `EnvConfig` also has preset helpers (`cartpole()`, `atari()`, `frozenlake()`, and others) — see the `EnvConfig` docstrings for options.
+`make_vector_env` returns a `MouseVectorEnv`. `EnvConfig` also has preset helpers (`cartpole()`, `procedural_frozenlake()`, `synthetic()`, `atari()`, and others) — see the `EnvConfig` docstrings for options.
 
 Required fields:
 
@@ -55,10 +55,13 @@ Every `step()` returns the same three-part shape:
 
 ```python
 data, metadata, metrics = env.step(actions)
-# data:     list[TensorDict]  — one record per parallel env (batch_size=[])
-# metadata: dict              — batch-level context
-# metrics:  dict              — batch-level episode statistics
+# actions[i]["action"]: dict — discrete or continuous (input to step)
+# data[i]:     sequence-model tokens — observation (dict), reward, done, time
+# metadata[i]: training & analysis — group_id, episode_index, reward_episodic, optional q_star
+# metrics[i]:  evaluation stats — cum reward, length
 ```
+
+**`data`** is the rollout stream you generally pass to an LLM or other sequence model. **`metadata`** and **`metrics`** sit alongside it at the same env index: they are not part of the model input by default, but **`metadata`** is often used to help training (e.g. Q* supervision), analyze performance, or inspect rollouts; **`metrics`** summarizes episode outcomes for evaluation and logging.
 
 When a sub-environment finishes, it auto-resets on the next step. That autoreset frame looks like the initial reset frame: dummy reward and `done == 0`. The actual episode boundary is the step where `done` is non-zero.
 
@@ -66,28 +69,33 @@ When a sub-environment finishes, it auto-resets on the next step. That autoreset
 
 ## Input: actions
 
-Pass a `list[TensorDict]` of length `num_envs`. Each element wraps an `"action"` dict with `"discrete"` or `"continuous"`, matching the environment's action space:
+Pass a `list[TensorDict]` of length `num_envs`. Like `observation` in `data`, each **`action` is a dict** — use `"discrete"` or `"continuous"` to match the environment's action space:
 
 ```python
 from tensordict import TensorDict
 import torch
 
+# Discrete env (e.g. Procedural Frozen Lake, Atari):
 actions = [
     TensorDict({"action": {"discrete": torch.tensor([2])}}, batch_size=[])
     for _ in range(env.num_envs)
 ]
+
+# Continuous env (e.g. CartPole with a Box action space would use "continuous"):
+# TensorDict({"action": {"continuous": torch.tensor([...])}}, batch_size=[])
+
 data, metadata, metrics = env.step(actions)
 ```
 
 For continuous action spaces, use `"continuous"` instead of `"discrete"`.
 
-`env.sample_random_actions()` generates a valid action list. On the first `step()` after construction, actions are ignored.
+`env.sample_random_actions()` generates a valid action list with the same dict layout. On the first `step()` after construction, actions are ignored.
 
 ---
 
 ## Output: `data`
 
-`data` is a list of length `num_envs`. Each element is a scalar TensorDict (`batch_size=[]`) with the same keys:
+**Model input.** `data` is what you generally feed to an LLM or sequence model — the per-step rollout stream. It is a list of length `num_envs`. Each element is a scalar TensorDict (`batch_size=[]`) with the same keys:
 
 ```python
 TensorDict({
@@ -97,10 +105,7 @@ TensorDict({
         "continuous": torch.tensor([...], dtype=torch.float32),  # optional
         "image":      torch.tensor([...], dtype=torch.float32),  # optional
     },
-    "reward": {
-        "step":     torch.tensor(float, dtype=torch.float32),
-        "episodic": torch.tensor(float, dtype=torch.float32),
-    },
+    "reward": torch.tensor(float, dtype=torch.float32),
     "done": torch.tensor(int, dtype=torch.int64),
 }, batch_size=[])
 ```
@@ -110,9 +115,8 @@ TensorDict({
 | Field | Description |
 |-------|-------------|
 | `time` | Step index within the current episode (0-based). `0` on reset frames. |
-| `observation` | Any combination of `discrete`, `continuous`, and/or `image`. Include whichever keys the environment provides. |
-| `reward.step` | Raw environment reward. `0.0` on reset frames (initial or autoreset). |
-| `reward.episodic` | Normalised training signal. `0.0` on reset frames. |
+| `observation` | **Dict** of tensors — any combination of `discrete`, `continuous`, and/or `image` (whichever keys the environment provides). Not a single flat vector. |
+| `reward` | Raw environment reward. `0.0` on reset frames (initial or autoreset). |
 | `done` | `0` running · `1` terminated · `2` truncated. `0` on reset frames. |
 
 Image observations (e.g. preprocessed Atari) are flattened vectors in `observation["image"]`.
@@ -123,31 +127,63 @@ Actions are **not** echoed in `data` — they are input to `step()` only.
 
 ## Output: `metadata`
 
-Batch-level context. Not stored inside individual TensorDicts.
+**Not model input — training & analysis.** Context aligned with `data[i]`. You typically do not tokenize or embed this into the sequence model, but it is often used to support training (expert Q-values, auxiliary losses), analyze performance, track env identity across parallel streams, or inspect non-stationary dynamics. For env `i`, read:
 
-| Key | Always | Description |
-|-----|--------|-------------|
-| `group_ids` | yes | `list[str]` — one id per env index (e.g. `"CartPole-v1#0"`) |
-| `episode_index` | yes | `int64[num_envs]` — monotonic episode counter per stream |
-| `q_star` | no | `float64[num_envs, action_dim]` — expert Q-values when configured |
-| `ns_params` | no | Current non-stationary parameter values (NS-Gym envs) |
-
-Use `group_ids[i]` to identify which environment stream a record came from.
+| Field | Always | Access |
+|-------|--------|--------|
+| `group_id` | yes | `metadata["group_ids"][i]` (e.g. `"CartPole-v1#0"`) |
+| `episode_index` | yes | `metadata["episode_index"][i]` |
+| `reward_episodic` | yes | `metadata["reward_episodic"][i]` — normalised training signal; `0.0` on reset frames |
+| `q_star` | no | `metadata["q_star"][i]` — expert Q-values when configured |
+| `ns_params` | no | non-stationary parameters (NS-Gym envs only) |
 
 ---
 
 ## Output: `metrics`
 
-Episode statistics at batch level. Values are `float64[num_envs]`.
+**Not model input — evaluation.** Episode statistics for the current step, aligned with `data[i]`. Use these to measure returns and episode lengths without parsing the rollout stream. For env `i`, read `metrics[i]`:
 
-| Key | Description |
-|-----|-------------|
-| `episode_cum_reward` | Cumulative raw return for the episode that just ended |
-| `episode_length` | Length in steps of the episode that just ended |
+| Field | Description |
+|-------|-------------|
+| `episode_cum_reward` | Cumulative raw return for each episode env `i` finished on this step |
+| `episode_length` | Length in steps for each episode env `i` finished on this step |
 
-Both are `NaN` while an episode is running. They are filled when `done != 0` on that env index.
+Each field is a (possibly empty) list of floats:
 
-Note: `metrics["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. Transformed rewards appear in `data[i]["reward"]["episodic"]`.
+- **`[]`** — env `i` did not finish on this step (including reset/autoreset frames).
+- **`[value]`** — env `i` finished once; one entry per finish on this step.
+- **`[v1, v2, …]`** — env `i` finished multiple times on this step (unusual, but supported by the shape).
+
+Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `metadata["reward_episodic"][i]`.
+
+---
+
+## Non-stationary environments (NS-Gym)
+
+[NS-Gym](https://github.com/scope-lab-vu/ns_gym) is an external open-source framework for non-stationary MDPs — mouse-env **uses** it; we did not create it. See the [NS-Gym docs](https://nsgym.io/) for the underlying schedulers, update functions, and wrappers.
+
+What mouse-env adds on top:
+
+- **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` (e.g. `EnvConfig.ns_cartpole(...)`) instead of wiring NS-Gym scheduler/update classes by hand
+- **Standard observations** — `NSGymInterfaceWrapper` strips NS-Gym’s dict observations down to flat state vectors compatible with the rest of the stack
+- **`metadata["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
+- **Same vector `step()` API** — non-stationary envs run through `make_vector_env` like CartPole or Atari
+
+Example: [examples/03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb).
+
+---
+
+## Atari (ALE integration)
+
+[Atari Learning Environment (ALE)](https://github.com/Farama-Foundation/Arcade-Learning-Environment) envs are provided by Gymnasium — mouse-env **uses** them as-is; we did not modify the games. See the [Gymnasium Atari docs](https://gymnasium.farama.org/environments/atari/).
+
+What mouse-env adds:
+
+- **`EnvConfig.atari()`** — bundles common `AtariPreprocessing` defaults (frame skip, grayscale 84×84, noop warm-up)
+- **Flattened `observation.image`** — preprocessed frames in the usual `data[i]` layout
+- **Same vector `step()` API** — parallel Atari streams like any other env
+
+Requires `gymnasium[atari]` / `ale_py`. Example: [examples/04_atari_preprocessing.ipynb](../examples/04_atari_preprocessing.ipynb).
 
 ## Examples
 

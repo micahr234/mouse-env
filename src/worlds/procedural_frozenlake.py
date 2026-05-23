@@ -1,4 +1,4 @@
-"""Custom FrozenLake environment with generated map and optional q_star labels."""
+"""Procedural Frozen Lake environment with generated maps and optional q_star labels."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
-from mouse.envs.custom.tabular.value_iteration import value_iteration_gymnasium_p
-from mouse.utils import map_payload_to_json_str
+from mouse.envs.planning.value_iteration import solve_tabular_mdp
+from mouse.envs.utils import map_payload_to_json_str
 
-from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID
+from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID
 
 
-class CustomFrozenLakeEnv(FrozenLakeEnv):
-    """FrozenLake variant with generated valid map and optional q_star info.
+class ProceduralFrozenLakeEnv(FrozenLakeEnv):
+    """Procedural Frozen Lake variant with generated valid map and optional q_star info.
 
     ``goal_reward_low`` / ``goal_reward_high`` (default ``1.0`` each, matching Gymnasium's goal
     reward) sample one reward **per goal tile** when the map is generated (not on each ``reset``),
@@ -29,15 +29,13 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
     :meth:`compute_q_table` applies those terminal rewards in value iteration.
 
     When ``emit_map`` is True, ``info["map"]`` is a **JSON string** encoding
-    ``{"board": [...], "rewards": {...}}`` (see :func:`utils.map_payload_to_json_str`).
+    ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse.envs.utils.map_payload_to_json_str`).
 
     Random maps place ``S`` / ``G`` and holes per ``hole_prob`` (see :meth:`_generate_map`).
 
     Map validity uses :meth:`_find_path_to_goal` so the shortest path from each ``S`` meets
-    ``min_hops``. When ``emit_q_star`` is True, labels use
-    **tabular value iteration** on Gymnasium's ``P`` matrix (same scheme as
-    ``CustomSyntheticEnv.compute_q_table``). The Q-table is rebuilt on every
-    :meth:`reset`.
+    ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse.envs.planning.solve_tabular_mdp`
+    on Gymnasium's ``P`` matrix. The Q-table is rebuilt on every :meth:`reset`.
 
     ``step_penalty`` is added to the scalar reward on **every** :meth:`step` (including
     terminal transitions). Value iteration includes the same offset so ``q_star`` matches rollout
@@ -394,7 +392,7 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
             if cls._map_is_valid(gridmap, min_hops=min_hops):
                 return gridmap
         raise RuntimeError(
-            "Could not generate a valid FrozenLake map. "
+            "Could not generate a valid Procedural Frozen Lake map. "
             "Try lower hole_prob, lower min_hops, or larger dimensions."
         )
 
@@ -403,12 +401,11 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
         max_iter: int = 10_000,
         tolerance: float = 1e-10,
     ) -> np.ndarray:
-        """Compute the optimal Q-table via value iteration on Gymnasium's ``P`` matrix.
+        """Compute the optimal Q-table for the current map via :func:`solve_tabular_mdp`.
 
-        Uses the same Bellman update scheme as :meth:`CustomSyntheticEnv.compute_q_table
-        <mouse.envs.synthetic.CustomSyntheticEnv.compute_q_table>`. Goal-tile rewards are
-        overridden with the per-tile values from ``_goal_rewards_by_state``, and
-        ``step_penalty`` is added to every non-terminal transition.
+        Goal-tile rewards are overridden with the per-tile values from
+        ``_goal_rewards_by_state``, and ``step_penalty`` is added to every
+        non-terminal transition.
 
         Args:
             max_iter: Maximum number of value-iteration sweeps.
@@ -419,8 +416,8 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
             every (state, action) pair under the current map.
         """
         n_s = int(self.nrow * self.ncol)
-        return value_iteration_gymnasium_p(
-            self.P,
+        return solve_tabular_mdp(
+            P=self.P,
             n_states=n_s,
             n_actions=4,
             gamma=float(self.gamma),
@@ -507,16 +504,16 @@ class CustomFrozenLakeEnv(FrozenLakeEnv):
         return obs, reward, terminated, truncated, info
 
 
-def ensure_custom_frozenlake_registered() -> None:
-    """Register ``Custom-FrozenLake-v1`` with Gymnasium exactly once.
+def ensure_procedural_frozenlake_registered() -> None:
+    """Register ``Procedural-FrozenLake-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
     by :func:`~mouse.envs.make_vector_env` when ``group_id`` matches
-    :data:`CUSTOM_FROZENLAKE_ENV_ID`.
+    :data:`PROCEDURAL_FROZENLAKE_ENV_ID`.
     """
-    if CUSTOM_FROZENLAKE_ENV_ID in registry:
+    if PROCEDURAL_FROZENLAKE_ENV_ID in registry:
         return
     register(
-        id=CUSTOM_FROZENLAKE_ENV_ID,
-        entry_point="mouse.envs.frozenlake:CustomFrozenLakeEnv",
+        id=PROCEDURAL_FROZENLAKE_ENV_ID,
+        entry_point="mouse.envs.worlds.procedural_frozenlake:ProceduralFrozenLakeEnv",
     )

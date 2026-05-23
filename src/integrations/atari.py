@@ -1,4 +1,4 @@
-"""Atari (ALE) env helpers."""
+"""Atari (ALE) integration helpers — registration and Gymnasium ``AtariPreprocessing`` wiring."""
 
 import gymnasium as gym
 from gymnasium.wrappers import AtariPreprocessing

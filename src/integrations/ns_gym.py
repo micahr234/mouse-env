@@ -137,14 +137,14 @@ class NSGymInterfaceWrapper(gym.Wrapper):
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         obs, info = self.env.reset(seed=seed, options=options)
         state = obs["state"] if isinstance(obs, dict) and "state" in obs else obs
-        info = extract_ns_params(_filter_ns_info(info))
-        return state, info
+        ns_params = extract_ns_params(_filter_ns_info(info))
+        return state, {"ns_params": ns_params}
 
     def step(self, action: Any):
         obs, reward, terminated, truncated, info = self.env.step(action)
         state = obs["state"] if isinstance(obs, dict) and "state" in obs else obs
-        info = extract_ns_params(_filter_ns_info(info))
-        return state, reward, terminated, truncated, info
+        ns_params = extract_ns_params(_filter_ns_info(info))
+        return state, reward, terminated, truncated, {"ns_params": ns_params}
 
 
 def create_ns_gym_update_functions(ns_gym_config: dict[str, Any]) -> dict[str, Any]:

@@ -6,7 +6,7 @@ Provides:
 - build_q_star_source_adapter: factory that reads a ``q_star_source`` config dict and
   returns the appropriate adapter (SB3 policy, tabular Q-table, or env-info passthrough).
 - action_star_to_one_hot_q_star: convert integer expert actions to one-hot Q-value rows.
-- apply_q_star_source_env_kwargs: inject ``emit_q_star`` kwargs for custom envs.
+- apply_q_star_source_env_kwargs: inject ``emit_q_star`` kwargs for first-party worlds.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import gymnasium as gym
 import numpy as np
 from huggingface_hub import hf_hub_download
 
-from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
+from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
 
 
 def _to_batched_action_star(value: Any, num_envs: int) -> np.ndarray:
@@ -656,8 +656,8 @@ def apply_q_star_source_env_kwargs(
 ) -> dict[str, Any]:
     """Inject any env-construction kwargs required by the ``q_star_source`` config.
 
-    For custom envs (FrozenLake / SyntheticEnv) with ``provider="metadata_q_star"``,
-    this sets ``emit_q_star=True`` in ``env_kwargs`` so the env runs value iteration
+    For first-party worlds (Procedural Frozen Lake / Synthetic Environment) with ``provider="metadata_q_star"``,
+    this sets ``emit_q_star=True`` in ``env_kwargs`` so the env solves the tabular MDP
     and emits Q-values into ``info["q_star"]`` each step.
 
     Args:
@@ -676,12 +676,12 @@ def apply_q_star_source_env_kwargs(
 
     out = dict(env_kwargs)
     emit_q_star = bool((q_star_source or {}).get("emit_q_star", False))
-    if policy_name == "metadata_q_star" and env_id in (CUSTOM_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
+    if policy_name == "metadata_q_star" and env_id in (PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
         emit_q_star = True
-    if emit_q_star and env_id in (CUSTOM_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
+    if emit_q_star and env_id in (PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
         out["emit_q_star"] = True
 
-    if env_id == CUSTOM_FROZENLAKE_ENV_ID and policy_name == "metadata_q_star":
+    if env_id == PROCEDURAL_FROZENLAKE_ENV_ID and policy_name == "metadata_q_star":
         random_map_wrapper = out.get("random_map_wrapper", None)
         if isinstance(random_map_wrapper, dict):
             wrapped = dict(random_map_wrapper)

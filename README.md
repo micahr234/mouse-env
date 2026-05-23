@@ -1,4 +1,4 @@
-# Meta-Optimization Using Sequential Experiences — Environments
+# MOUSE Environments
 
 <p align="center"><img src="docs/mouse-env.png" width="400"/></p>
 
@@ -22,27 +22,63 @@ source scripts/install.sh
 
 ## Quick start
 
+Configure a vector env, call `step()` in a loop, and read TensorDict records — no Gymnasium `info` dicts to parse.
+
 ```python
 from mouse.envs import EnvConfig, make_vector_env
 
-env = make_vector_env(EnvConfig(
-    group_id="CartPole-v1",
-    seed=0,
-    num_envs=4,
-    max_episode_steps=500,
-))
+cfg = EnvConfig.cartpole(seed=0, num_envs=4, max_episode_steps=500)
+env = make_vector_env(cfg)
 
 for _ in range(1000):
-    data, metadata, metrics = env.step(env.sample_random_actions())
+    actions = env.sample_random_actions()
+    data, metadata, metrics = env.step(actions)
+
+env.close()
 ```
 
-See **[docs/guide.md](docs/guide.md)** for the full step API — input actions, output records, reset behaviour, and field reference.
+Compared to Gymnasium:
 
-Interactive examples (Jupyter notebooks) live in [`examples/`](examples/) — see the [index](examples/README.md). After `source scripts/install.sh`, open them with Jupyter Lab or VS Code’s notebook UI:
+- **No `reset()`** — call `step()` only. The first call resets internally; actions on that call are ignored.
+- **Dict observations and actions** — `data[i]["observation"]` and `actions[i]["action"]` are both dicts of tensors. Observations use `discrete`, `continuous`, and/or `image`; actions use `discrete` or `continuous`, matching the env's spaces.
+- **Different return value** — `(data, metadata, metrics)` instead of `(obs, reward, terminated, truncated, info)`.
+  - **`data[i]`** — the sequence-model payload: `time`, `observation`, `reward`, and `done`.
+  - **`metadata`** — shared dict of per-env arrays aligned with `data[i]` (e.g. `metadata["group_ids"][i]`, `metadata["episode_index"][i]`, `metadata["reward_episodic"][i]`, optional `metadata["q_star"][i]`). Not fed directly to the sequence model, but commonly used to support training (shaped returns, expert targets, auxiliary losses), analyze performance, and debug rollouts.
+  - **`metrics[i]`** — episode finish stats for this step (empty lists if none). Used for evaluation and logging, not model input.
 
-```bash
-.venv/bin/jupyter lab examples/
-```
+See **[docs/guide.md](docs/guide.md)** for the full step API. Example Jupyter notebooks are in [`examples/`](examples/).
+
+## Environments & features
+
+Beyond plain Gymnasium envs, mouse-env ships custom worlds, non-stationary dynamics, and expert-policy metadata for in-context RL experiments.
+
+**Procedural Frozen Lake** (`Procedural-FrozenLake-v1`, `EnvConfig.procedural_frozenlake()`) — not Gymnasium's fixed 4×4 `FrozenLake-v1`. Each env instance draws a new valid grid (random size, holes, start/goal placement) with optional per-goal rewards.
+
+**Synthetic Environment** (`SyntheticEnv-v1`, `EnvConfig.synthetic()`) — a finite discrete MDP with randomly sampled transitions and rewards, for controlled tabular experiments without hand-designing a grid.
+
+**NS-Gym integration** — [NS-Gym](https://github.com/scope-lab-vu/ns_gym) is an external framework for non-stationary MDPs; we did not build it, but mouse-env integrates it so you can use time-varying physics (e.g. oscillating CartPole pole length) through the same `step()` API as everything else. Our layer adds:
+
+- **`EnvConfig.ns_cartpole(non_stationary_params={...})`** — plain dict configs for NS-Gym schedulers and update functions (no manual wrapper wiring)
+- **`NSGymInterfaceWrapper`** — adapts NS-Gym’s dict observations and ground-truth info into flat observations and `metadata["ns_params"]`
+- **Vector env support** — parallel non-stationary streams with the usual `(data, metadata, metrics)` return shape
+
+See [examples/03_ns_gym_oscillating.ipynb](examples/03_ns_gym_oscillating.ipynb). NS-Gym docs: [nsgym.io](https://nsgym.io/).
+
+**Atari integration** — [Gymnasium Atari (ALE)](https://gymnasium.farama.org/environments/atari/) envs are unchanged under the hood; mouse-env does not modify the games themselves. We bundle the usual training presets so you can run them through the same `step()` API:
+
+- **`EnvConfig.atari()`** — common defaults: Gymnasium's `AtariPreprocessing` with frame skip 4, grayscale 84×84 resize, and noop warm-up (all overridable via `atari_preprocessing_kwargs`)
+- **Observation layout** — preprocessed frames surface as flattened `observation.image` in `data`
+
+Requires the `gymnasium[atari]` extra (`ale_py`). See [examples/04_atari_preprocessing.ipynb](examples/04_atari_preprocessing.ipynb).
+
+**Expert Q-values (Q\*)** — attach optimal or near-optimal action values to supported envs via `q_star_source`; values appear in `metadata["q_star"][i]` each step:
+
+- **Standard Gymnasium envs** — load a pretrained Stable-Baselines3 policy from the Hugging Face Hub (`provider: sb3_rl_zoo`). The CartPole preset includes this by default.
+- **Tabular envs** (Procedural Frozen Lake, Synthetic Environment) — exact Q* is computed by solving the MDP (`provider: metadata_q_star`); no external Q-table download required.
+
+**Partial observability** — mask observation dimensions with `observation_indices` on any env that exposes a continuous observation vector. See [examples/05_partial_observability.ipynb](examples/05_partial_observability.ipynb).
+
+**Reward shaping** — scale and shift per-step rewards with `reward_scale` / `reward_shift`; the normalised training signal appears in `metadata["reward_episodic"]`. See [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb).
 
 ## Contributing
 

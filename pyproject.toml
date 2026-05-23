@@ -43,14 +43,21 @@ environments = ["sys_platform == 'linux'"]
 [tool.setuptools]
 packages = [
     "mouse.envs",
-    "mouse.envs.custom",
-    "mouse.envs.custom.tabular",
+    "mouse.envs.worlds",
+    "mouse.envs.integrations",
+    "mouse.envs.experts",
+    "mouse.envs.planning",
 ]
 
 [tool.setuptools.package-dir]
 "mouse.envs" = "src"
-"mouse.envs.custom" = "src/custom"
-"mouse.envs.custom.tabular" = "src/custom/tabular"
+"mouse.envs.worlds" = "src/worlds"
+"mouse.envs.integrations" = "src/integrations"
+"mouse.envs.experts" = "src/experts"
+"mouse.envs.planning" = "src/planning"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.uv.sources]
 mouse-core = { git = "https://github.com/micahr234/mouse-core.git" }

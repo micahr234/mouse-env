@@ -1,4 +1,4 @@
-"""Random discrete environment with tabular transitions (self-loops encode failed moves)."""
+"""Synthetic Environment — random discrete tabular MDP with optional q_star labels."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.envs.registration import register, registry
 
-from mouse.envs.custom.tabular.value_iteration import value_iteration_tabular
-from mouse.utils import map_payload_to_json_str
+from mouse.envs.planning.value_iteration import solve_tabular_mdp
+from mouse.envs.utils import map_payload_to_json_str
 
 from mouse.envs.env_ids import SYNTHETIC_ENV_ID
 
@@ -33,7 +33,7 @@ def _uniform_n(
     return rng.uniform(lo, hi, size=size)
 
 
-class CustomSyntheticEnv(gym.Env[int, int]):
+class SyntheticEnv(gym.Env[int, int]):
     """Finite MDP with random tabular transitions, per-(state, action) rewards and goal flags.
 
     Dynamics are fully specified by ``map['transition']`` (next-state indices, including
@@ -51,9 +51,9 @@ class CustomSyntheticEnv(gym.Env[int, int]):
 
     ``step_penalty`` is added to the reward on every :meth:`step` (including terminal steps).
     :meth:`compute_q_table` applies the same offset so ``q_star`` matches rollout rewards when
-    ``emit_q_star`` is True.
+    ``emit_q_star`` is True (via :func:`~mouse.envs.planning.solve_tabular_mdp`).
 
-    :meth:`step` sets ``truncated=False`` like Gymnasium ``FrozenLakeEnv`` / the custom FrozenLake
+    :meth:`step` sets ``truncated=False`` like Gymnasium ``FrozenLakeEnv`` / Procedural Frozen Lake
     wrapper; step-limit truncation is applied by ``TimeLimit`` when using
     ``gym.make(..., max_episode_steps=...)``.
     """
@@ -353,17 +353,7 @@ class CustomSyntheticEnv(gym.Env[int, int]):
         max_iter: int = 10000,
         tolerance: float = 1e-10,
     ) -> np.ndarray:
-        """Compute the optimal Q-table via value iteration on the tabular MDP.
-
-        The Bellman update at each sweep is:
-
-        .. code-block:: text
-
-            Q(s, a) = reward(s, a) + step_penalty + gamma * (not_goal(s, a)) * V(transition(s, a))
-
-        where ``V(s) = max_a Q(s, a)`` and goal transitions are treated as terminal
-        (no future value). Converges when the max absolute change in Q is below
-        ``tolerance``.
+        """Compute the optimal Q-table for the current map via :func:`solve_tabular_mdp`.
 
         Args:
             max_iter: Maximum number of value-iteration sweeps.
@@ -372,7 +362,7 @@ class CustomSyntheticEnv(gym.Env[int, int]):
         Returns:
             ``float64`` array of shape ``(obs_size, action_size)`` — optimal Q-values.
         """
-        return value_iteration_tabular(
+        return solve_tabular_mdp(
             reward=self.map["reward"],
             transition=self.map["transition"],
             goal=self.map["goal"],
@@ -445,7 +435,7 @@ class CustomSyntheticEnv(gym.Env[int, int]):
 
 
 def ensure_synthetic_env_registered() -> None:
-    """Register ``Custom-SyntheticEnv-v1`` with Gymnasium exactly once.
+    """Register ``SyntheticEnv-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
     by :func:`~mouse.envs.make_vector_env` when ``group_id`` matches
@@ -455,5 +445,5 @@ def ensure_synthetic_env_registered() -> None:
         return
     register(
         id=SYNTHETIC_ENV_ID,
-        entry_point="mouse.envs.synthetic:CustomSyntheticEnv",
+        entry_point="mouse.envs.worlds.synthetic:SyntheticEnv",
     )

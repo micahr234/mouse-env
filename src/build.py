@@ -13,14 +13,14 @@ from mouse.envs.config import (
     normalize_group_id,
     resolve_q_star_source_for_env,
 )
-from mouse.envs.custom.action_star import apply_q_star_source_env_kwargs
-from mouse.envs.custom.atari import (
+from mouse.envs.experts.action_star import apply_q_star_source_env_kwargs
+from mouse.envs.integrations.atari import (
     ensure_ale_registered,
     is_ale_env,
     wrap_atari_preprocessing,
 )
-from mouse.envs.custom.ns_gym import make_ns_env
-from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
+from mouse.envs.integrations.ns_gym import make_ns_env
+from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
 from mouse.envs.format import MouseVectorEnv
 from mouse.envs.wrappers import (
     ConstructionSeedWrapper,
@@ -98,17 +98,17 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
         env_kwargs=env_kwargs,
         q_star_source=config.q_star_source,
     )
-    if config.group_id == CUSTOM_FROZENLAKE_ENV_ID:
-        from mouse.envs.custom.frozenlake import ensure_custom_frozenlake_registered
+    if config.group_id == PROCEDURAL_FROZENLAKE_ENV_ID:
+        from mouse.envs.worlds.procedural_frozenlake import ensure_procedural_frozenlake_registered
 
-        ensure_custom_frozenlake_registered()
+        ensure_procedural_frozenlake_registered()
         random_map_wrapper_raw = env_kwargs.pop("random_map_wrapper", None)
         if isinstance(random_map_wrapper_raw, dict):
             env_kwargs.update(dict(random_map_wrapper_raw))
         elif random_map_wrapper_raw is not None:
             raise ValueError("env_kwargs.random_map_wrapper must be a dict when provided.")
     elif config.group_id == SYNTHETIC_ENV_ID:
-        from mouse.envs.custom.synthetic import ensure_synthetic_env_registered
+        from mouse.envs.worlds.synthetic import ensure_synthetic_env_registered
 
         ensure_synthetic_env_registered()
     if config.render and "render_mode" not in env_kwargs:
@@ -123,7 +123,7 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
 
 
 def _mdp_seed_for_index(config: EnvConfig, index: int) -> int:
-    if config.group_id in (SYNTHETIC_ENV_ID, CUSTOM_FROZENLAKE_ENV_ID):
+    if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
         return int(config.seed) + index
     return config.seed + index
 
@@ -136,7 +136,7 @@ def _make_plain_single_env(
     atari_preprocessing: bool,
 ) -> gym.Env:
     mdp_seed = _mdp_seed_for_index(config, index)
-    seeded_at_construction = config.group_id in (SYNTHETIC_ENV_ID, CUSTOM_FROZENLAKE_ENV_ID)
+    seeded_at_construction = config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID)
     use_preprocessing = is_ale_env(config.group_id) and atari_preprocessing
 
     def env_fn(s: int) -> gym.Env:
@@ -183,7 +183,7 @@ def _build_plain_vector_env(
     atari_preprocessing = bool(config.atari_preprocessing) if config.atari_preprocessing is not None else False
     env_kwargs = _prepare_plain_env_kwargs(config, atari_preprocessing=atari_preprocessing)
 
-    if config.group_id in (SYNTHETIC_ENV_ID, CUSTOM_FROZENLAKE_ENV_ID):
+    if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
         clean_kwargs = dict(env_kwargs)
         clean_kwargs.pop("seed", None)
     else:

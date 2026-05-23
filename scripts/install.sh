@@ -74,13 +74,12 @@ setup_venv() {
     success "Project dependencies installed"
 }
 
-# Main installation process: git, uv, venv, project dependencies
+# Main installation process: uv, venv, project dependencies
 main() {
     echo "Starting Installation"
     echo "=================================="
 
     log "Installing packages..."
-    setup_git
     install_uv
     setup_venv
 

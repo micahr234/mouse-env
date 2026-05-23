@@ -72,7 +72,7 @@ class EnvConfig:
         Pass ``q_star_source=None`` explicitly to disable expert metadata.
         """
         if q_star_source is ...:
-            resolved_q_star = dict(DEFAULT_SB3_Q_STAR_CARTPOLE)
+            resolved_q_star: dict[str, Any] | None = dict(DEFAULT_SB3_Q_STAR_CARTPOLE)
         else:
             resolved_q_star = q_star_source
         return cls(
@@ -107,7 +107,7 @@ class EnvConfig:
         )
 
     @classmethod
-    def frozenlake(
+    def procedural_frozenlake(
         cls,
         *,
         seed: int = 0,
@@ -117,9 +117,31 @@ class EnvConfig:
         q_star_source: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> EnvConfig:
-        """Preset for ``Custom-FrozenLake-v1`` with metadata Q*."""
+        """Preset for ``Procedural-FrozenLake-v1``."""
         return cls(
-            group_id="Custom-FrozenLake-v1",
+            group_id="Procedural-FrozenLake-v1",
+            seed=seed,
+            num_envs=num_envs,
+            max_episode_steps=max_episode_steps,
+            kwargs=env_kwargs,
+            q_star_source=q_star_source or {"provider": "metadata_q_star"},
+            **kwargs,
+        )
+
+    @classmethod
+    def synthetic(
+        cls,
+        *,
+        seed: int = 0,
+        num_envs: int = 1,
+        max_episode_steps: int = 200,
+        env_kwargs: dict[str, Any] | None = None,
+        q_star_source: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> EnvConfig:
+        """Preset for ``SyntheticEnv-v1``."""
+        return cls(
+            group_id="SyntheticEnv-v1",
             seed=seed,
             num_envs=num_envs,
             max_episode_steps=max_episode_steps,
@@ -141,7 +163,7 @@ class EnvConfig:
         noop_max: int = 30,
         **kwargs: Any,
     ) -> EnvConfig:
-        """Preset for ALE Atari envs with standard grayscale preprocessing."""
+        """Preset for ALE Atari envs — common ``AtariPreprocessing`` defaults only."""
         return cls(
             group_id=env_id,
             seed=seed,

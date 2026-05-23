@@ -25,15 +25,21 @@ This installs the package in editable mode with dev dependencies (including Jupy
 
 1. Fork the repository and create a branch from `main`.
 2. Make your changes. Keep commits focused — one logical change per commit.
-3. Check for linter errors (`pyright src/`) before opening a PR.
+3. Run tests (`.venv/bin/pytest`) and check for linter errors (`pyright src/`) before opening a PR.
 4. Open a pull request against `main` with a clear description of what changed and why.
 
-There are no formal tests yet — if you add a new feature, add or extend a notebook under [`examples/`](examples/) (or describe usage in the PR). Edit `.ipynb` files directly in Jupyter or VS Code.
+Tests live under [`tests/`](tests/):
+
+- `test_smoke.py` — core env presets (CartPole, tabular envs, NS-Gym, reward shaping)
+- `test_q_star.py` — expert Q* adapters offline (local SB3 checkpoint, tabular pickle; no Hugging Face)
+- `test_atari.py` — ALE vector env + preprocessing (requires `ale_py` ROMs, already bundled with `gymnasium[atari]`)
+
+If you add a new feature, add or extend a test under [`tests/`](tests/) and/or a notebook under [`examples/`](examples/).
 
 ## Code style
 
 - Python 3.12+, type-annotated throughout.
-- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, custom envs in `custom/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
+- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, first-party worlds in `worlds/`, third-party bridges in `integrations/`, expert Q* plumbing in `experts/`, MDP solvers in `planning/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 
