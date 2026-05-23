@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/mouse-env.png" width="400"/></p>
 
-<p><strong><span style="color:#d00000;">Warning:</span></strong> MOUSE is in early development and is not yet ready for production use. APIs may change without notice.</p>
+> **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
 **mouse-env** is the environment layer for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning (ICRL).
 
@@ -79,7 +79,8 @@ env.close()
 
 ### Important stepping semantics
 
-- **Use `step()` only.**
+- **Use `step()` only — do not call `reset()`.**
+  - This is an intentional API behavior change from typical Gym-style loops: `mouse-env` handles resets internally.
   - The first `step()` performs an internal reset and returns initial observations with `reward=0`, `done=0`, `time=0`.
   - Actions passed on that first call are ignored.
 - **Autoreset is built in.**
