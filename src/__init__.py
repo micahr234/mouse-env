@@ -1,13 +1,11 @@
-"""MOUSE environments — vector envs, wrappers, and expert tools for rollout collection."""
+"""MOUSE environments — vector envs and rollout formatting for mouse-core."""
 
-from mouse.envs.config import EnvBuildConfig, EnvConfig, RolloutConfig
-from mouse.envs.contract import CONTRACT_VERSION
-from mouse.envs.factory import make_vector_env
+from mouse.envs.build import make_vector_env
+from mouse.envs.config import EnvConfig
+from mouse.envs.format import MouseVectorEnv
 
 __all__ = [
-    "CONTRACT_VERSION",
     "EnvConfig",
-    "EnvBuildConfig",
-    "RolloutConfig",
     "make_vector_env",
+    "MouseVectorEnv",
 ]

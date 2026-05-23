@@ -77,7 +77,7 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
 class ExpertPolicyAdapter:
     """Adapter that extracts expert Q-values or optimal actions from various sources.
 
-    Used internally by :class:`~mouse.envs.base.QStarWrapper` to populate
+    Used internally by :class:`~mouse.envs.wrappers.QStarWrapper` to populate
     ``info["metadata_q_star"]`` on each step. Instantiated by
     :func:`build_q_star_source_adapter`; do not construct directly.
 

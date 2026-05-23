@@ -19,7 +19,7 @@ cd mouse-env
 source scripts/install.sh
 ```
 
-This installs the package in editable mode with dev dependencies.
+This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks).
 
 ## Pull request workflow
 
@@ -28,12 +28,12 @@ This installs the package in editable mode with dev dependencies.
 3. Check for linter errors (`pyright src/`) before opening a PR.
 4. Open a pull request against `main` with a clear description of what changed and why.
 
-There are no formal tests yet — if you add a new feature, a short usage example in the PR description or in the relevant `docs/` page is sufficient.
+There are no formal tests yet — if you add a new feature, add or extend a notebook under [`examples/`](examples/) (or describe usage in the PR). Edit `.ipynb` files directly in Jupyter or VS Code.
 
 ## Code style
 
 - Python 3.12+, type-annotated throughout.
-- Follow the existing patterns: wrappers in `stack/`, env backends in `backends/`, config in `config.py`, factory in `factory.py`, public API in `__init__.py`, documentation in `docs/`.
+- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, custom envs in `custom/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 

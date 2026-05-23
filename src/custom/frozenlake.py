@@ -12,7 +12,7 @@ import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
-from mouse.envs.tabular.value_iteration import value_iteration_gymnasium_p
+from mouse.envs.custom.tabular.value_iteration import value_iteration_gymnasium_p
 from mouse.utils import map_payload_to_json_str
 
 from mouse.envs.env_ids import CUSTOM_FROZENLAKE_ENV_ID
@@ -511,7 +511,7 @@ def ensure_custom_frozenlake_registered() -> None:
     """Register ``Custom-FrozenLake-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
-    by :func:`~mouse.envs.envs.PlainVectorEnv` when ``env_id`` matches
+    by :func:`~mouse.envs.make_vector_env` when ``group_id`` matches
     :data:`CUSTOM_FROZENLAKE_ENV_ID`.
     """
     if CUSTOM_FROZENLAKE_ENV_ID in registry:

@@ -9,3 +9,4 @@ uv.lock
 site/
 .cache/
 mouse-core/
+.ipynb_checkpoints/

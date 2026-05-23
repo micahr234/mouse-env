@@ -4,8 +4,6 @@ Provides:
 - NS-gym wrappers, update functions, and scheduler config
 - NSGymInterfaceWrapper: adapts NS-Gym dict obs + info to flat obs + ns_params
 - make_ns_env: create a single non-stationary env
-- NSVectorEnv: vector runner for non-stationary envs
-- is_ns_gym_env / normalize_env_id: routing helpers
 """
 
 from typing import Any, cast
@@ -38,7 +36,7 @@ from ns_gym.update_functions import (
 )
 from ns_gym.wrappers import NSClassicControlWrapper, NSCliffWalkingWrapper, NSFrozenLakeWrapper
 
-from mouse.envs.routing import is_ns_gym_env, normalize_env_id
+from mouse.envs.config import is_ns_gym_env, normalize_group_id
 
 # -----------------------------------------------------------------------------
 # NS-Gym: wrappers, update functions, single env, vector env
@@ -119,7 +117,7 @@ class NSGymInterfaceWrapper(gym.Wrapper):
     - **Info**: raw ground-truth keys are replaced with the output of
       :func:`extract_ns_params` (keys like ``"{param}"`` and ``"{param}_flag"``).
 
-    The :class:`~mouse.envs.base.ObservationSliceWrapper` and the full wrapper stack can
+    The :class:`~mouse.envs.wrappers.ObservationSliceWrapper` and the full wrapper stack can
     then be applied on top without any NS-Gym-specific logic.
 
     Args:
@@ -318,13 +316,5 @@ def make_ns_env(
         change_notification=True,
         delta_change_notification=env_id not in _NS_NO_DELTA_CHANGE,
     ))
-
-
-def __getattr__(name: str):
-    if name == "NSVectorEnv":
-        from mouse.envs.backends.ns import NSVectorEnv as _NSVectorEnv
-
-        return _NSVectorEnv
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

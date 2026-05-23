@@ -1,6 +1,6 @@
 """Tabular MDP utilities."""
 
-from mouse.envs.tabular.value_iteration import (
+from mouse.envs.custom.tabular.value_iteration import (
     value_iteration_gymnasium_p,
     value_iteration_tabular,
 )
