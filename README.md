@@ -43,7 +43,7 @@ Compared to Gymnasium:
 - **Dict observations and actions** — `data[i]["observation"]` and `actions[i]["action"]` are both dicts of tensors. Observations use `discrete`, `continuous`, and/or `image`; actions use `discrete` or `continuous`, matching the env's spaces.
 - **Different return value** — `(data, metadata, metrics)` instead of `(obs, reward, terminated, truncated, info)`.
   - **`data[i]`** — the sequence-model payload: `time`, `observation`, `reward`, and `done`.
-  - **`metadata`** — shared dict of per-env arrays aligned with `data[i]` (e.g. `metadata["group_ids"][i]`, `metadata["episode_index"][i]`, `metadata["reward_episodic"][i]`, optional `metadata["q_star"][i]`). Not fed directly to the sequence model, but commonly used to support training (shaped returns, expert targets, auxiliary losses), analyze performance, and debug rollouts.
+  - **`metadata[i]`** — per-env training and analysis context: `group_id`, `episode_index`, `reward_episodic`, optional `q_star`. Not fed directly to the sequence model, but commonly used to support training (shaped returns, expert targets, auxiliary losses), analyze performance, and debug rollouts.
   - **`metrics[i]`** — episode finish stats for this step (empty lists if none). Used for evaluation and logging, not model input.
 
 See **[docs/guide.md](docs/guide.md)** for the full step API. Example Jupyter notebooks are in [`examples/`](examples/).
@@ -59,7 +59,7 @@ Beyond plain Gymnasium envs, mouse-env ships custom worlds, non-stationary dynam
 **NS-Gym integration** — [NS-Gym](https://github.com/scope-lab-vu/ns_gym) is an external framework for non-stationary MDPs; we did not build it, but mouse-env integrates it so you can use time-varying physics (e.g. oscillating CartPole pole length) through the same `step()` API as everything else. Our layer adds:
 
 - **`EnvConfig.ns_cartpole(non_stationary_params={...})`** — plain dict configs for NS-Gym schedulers and update functions (no manual wrapper wiring)
-- **`NSGymInterfaceWrapper`** — adapts NS-Gym’s dict observations and ground-truth info into flat observations and `metadata["ns_params"]`
+- **`NSGymInterfaceWrapper`** — adapts NS-Gym’s dict observations and ground-truth info into flat observations and per-env `metadata[i]["ns_params"]`
 - **Vector env support** — parallel non-stationary streams with the usual `(data, metadata, metrics)` return shape
 
 See [examples/03_ns_gym_oscillating.ipynb](examples/03_ns_gym_oscillating.ipynb). NS-Gym docs: [nsgym.io](https://nsgym.io/).
@@ -71,14 +71,14 @@ See [examples/03_ns_gym_oscillating.ipynb](examples/03_ns_gym_oscillating.ipynb)
 
 Requires the `gymnasium[atari]` extra (`ale_py`). See [examples/04_atari_preprocessing.ipynb](examples/04_atari_preprocessing.ipynb).
 
-**Expert Q-values (Q\*)** — attach optimal or near-optimal action values to supported envs via `q_star_source`; values appear in `metadata["q_star"][i]` each step:
+**Expert Q-values (Q\*)** — attach optimal or near-optimal action values to supported envs via `q_star_source`; values appear in `metadata[i]["q_star"]` each step:
 
 - **Standard Gymnasium envs** — load a pretrained Stable-Baselines3 policy from the Hugging Face Hub (`provider: sb3_rl_zoo`). The CartPole preset includes this by default.
 - **Tabular envs** (Procedural Frozen Lake, Synthetic Environment) — exact Q* is computed by solving the MDP (`provider: metadata_q_star`); no external Q-table download required.
 
 **Partial observability** — mask observation dimensions with `observation_indices` on any env that exposes a continuous observation vector. See [examples/05_partial_observability.ipynb](examples/05_partial_observability.ipynb).
 
-**Reward shaping** — scale and shift per-step rewards with `reward_scale` / `reward_shift`; the normalised training signal appears in `metadata["reward_episodic"]`. See [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb).
+**Reward shaping** — scale and shift per-step rewards with `reward_scale` / `reward_shift`; the normalised training signal appears in `metadata[i]["reward_episodic"]`. See [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb).
 
 ## Contributing
 

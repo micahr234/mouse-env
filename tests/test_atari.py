@@ -35,8 +35,9 @@ def test_atari_vector_preprocessing() -> None:
         assert env.obs_key == "observation_image"
         data, metadata, metrics = env.step(env.sample_random_actions())
         assert len(data) == 2
+        assert len(metadata) == 2
         assert len(metrics) == 2
-        assert "group_ids" in metadata
+        assert "group_id" in metadata[0]
 
         batch = np.stack([td["observation"]["image"].numpy() for td in data])
         assert batch.shape == (2, 84 * 84)

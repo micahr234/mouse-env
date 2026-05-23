@@ -16,7 +16,7 @@ NS_PARAMS = {
 }
 
 
-def _rollout(env, steps: int = 5) -> tuple[list, dict, list]:
+def _rollout(env, steps: int = 5) -> tuple[list, list, list]:
     data, metadata, metrics = env.step(env.sample_random_actions())
     for _ in range(steps - 1):
         data, metadata, metrics = env.step(env.sample_random_actions())
@@ -34,9 +34,10 @@ def test_cartpole_step_contract() -> None:
     try:
         data, metadata, metrics = _rollout(env)
         assert len(data) == 2
+        assert len(metadata) == 2
         assert len(metrics) == 2
-        assert "group_ids" in metadata
-        assert len(metadata["group_ids"]) == 2
+        assert metadata[0]["group_id"].endswith("#0")
+        assert metadata[1]["group_id"].endswith("#1")
         for i, td in enumerate(data):
             assert set(td.keys()) >= {"time", "observation", "reward", "done"}
             assert "continuous" in td["observation"]
@@ -53,8 +54,10 @@ def test_procedural_frozenlake_vector() -> None:
     try:
         data, metadata, metrics = _rollout(env)
         assert len(data) == 2
-        assert "q_star" in metadata
-        assert metadata["q_star"].shape == (2, 4)
+        assert len(metadata) == 2
+        assert "q_star" in metadata[0]
+        assert metadata[0]["q_star"].shape == (4,)
+        assert metadata[1]["q_star"].shape == (4,)
         for td in data:
             assert "discrete" in td["observation"]
     finally:
@@ -67,7 +70,7 @@ def test_synthetic_vector() -> None:
     try:
         data, metadata, _metrics = _rollout(env)
         assert len(data) == 2
-        assert "q_star" in metadata
+        assert "q_star" in metadata[0]
         for td in data:
             assert "discrete" in td["observation"]
     finally:
@@ -84,8 +87,8 @@ def test_ns_cartpole() -> None:
     env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=3)
-        assert "ns_params" in metadata
-        assert "length" in metadata["ns_params"]
+        assert "ns_params" in metadata[0]
+        assert "length" in metadata[0]["ns_params"]
     finally:
         env.close()
 
@@ -102,7 +105,7 @@ def test_reward_shaping() -> None:
     env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=3)
-        assert metadata["reward_episodic"].dtype == np.float32
+        assert isinstance(metadata[0]["reward_episodic"], float)
     finally:
         env.close()
 
@@ -137,7 +140,7 @@ def test_first_step_is_reset_frame() -> None:
         assert data[0]["time"].item() == 0
         assert data[0]["reward"].item() == 0.0
         assert data[0]["done"].item() == 0
-        assert metadata["reward_episodic"][0] == 0.0
+        assert metadata[0]["reward_episodic"] == 0.0
         assert metrics[0]["episode_cum_reward"] == []
     finally:
         env.close()

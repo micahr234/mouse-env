@@ -46,9 +46,9 @@ class RolloutMetrics(TypedDict):
 class RolloutMetadata(TypedDict, total=False):
     """Per-env fields at the same index as ``data`` (``metadata[i]`` view)."""
 
-    group_ids: list[str]
-    episode_index: Any
-    reward_episodic: Any
+    group_id: str
+    episode_index: int
+    reward_episodic: float
     q_star: Any
     ns_params: Any
 
@@ -80,12 +80,12 @@ class MouseVectorEnv:
     Actions are input to ``step()`` only (not echoed in ``data``). Pass ``list[TensorDict]``;
     each ``actions[i]["action"]`` is a dict with ``"discrete"`` or ``"continuous"`` tensors.
 
-    ``metadata`` uses the same env index as ``data`` (``metadata[i]``):
-        group_ids:       list[str]                 — ``metadata["group_ids"][i]``
-        episode_index:   int64[num_envs]           — ``metadata["episode_index"][i]``
-        reward_episodic: float32[num_envs]         — normalised training signal; ``metadata["reward_episodic"][i]``
-        q_star:          float64[num_envs, action_dim] (optional) — ``metadata["q_star"][i]``
-        ns_params:       any                      (optional, NS-Gym envs only)
+    ``metadata`` is a list aligned with ``data`` (``metadata[i]``):
+        group_id:        str                       — ``metadata[i]["group_id"]``
+        episode_index:   int                       — ``metadata[i]["episode_index"]``
+        reward_episodic: float                     — normalised training signal; ``metadata[i]["reward_episodic"]``
+        q_star:          float64[action_dim] (optional) — ``metadata[i]["q_star"]``
+        ns_params:       dict (optional, NS-Gym envs only) — ``metadata[i]["ns_params"]``
 
     ``metrics`` uses the same env index as ``data`` (``metrics[i]``):
         episode_cum_reward: list[float]   — empty unless env ``i`` finished on this step
@@ -137,7 +137,7 @@ class MouseVectorEnv:
             tds.append(TensorDict({"action": action}, batch_size=[]))
         return tds
 
-    def step(self, actions: list[TensorDict]) -> tuple[list[TensorDict], dict, list[dict]]:
+    def step(self, actions: list[TensorDict]) -> tuple[list[TensorDict], list[dict], list[dict]]:
         """Step all envs; return ``(data, metadata, metrics)``.
 
         On the first call after construction, performs an internal reset and returns
@@ -212,16 +212,31 @@ class MouseVectorEnv:
             for i in range(self.num_envs)
         ]
 
-    def _build_metadata(self, info: dict, *, reward_episodic: np.ndarray) -> dict:
-        metadata: dict = {
-            "group_ids": list(self._group_ids),
-            "episode_index": np.asarray(info["episode_index"], dtype=np.int64),
-            "reward_episodic": np.asarray(reward_episodic, dtype=np.float32),
-        }
-        if "metadata_q_star" in info:
-            metadata["q_star"] = np.asarray(info["metadata_q_star"], dtype=np.float64)
-        if "ns_params" in info:
-            metadata["ns_params"] = info["ns_params"]
+    def _ns_params_for_env(self, ns_params: Any, i: int) -> Any:
+        if isinstance(ns_params, list):
+            return ns_params[i]
+        return ns_params
+
+    def _build_metadata(self, info: dict, *, reward_episodic: np.ndarray) -> list[dict]:
+        episode_index = np.asarray(info["episode_index"], dtype=np.int64)
+        q_star = (
+            np.asarray(info["metadata_q_star"], dtype=np.float64)
+            if "metadata_q_star" in info
+            else None
+        )
+        ns_params = info.get("ns_params")
+        metadata: list[dict] = []
+        for i in range(self.num_envs):
+            entry: dict = {
+                "group_id": self._group_ids[i],
+                "episode_index": int(episode_index[i]),
+                "reward_episodic": float(reward_episodic[i]),
+            }
+            if q_star is not None:
+                entry["q_star"] = q_star[i]
+            if ns_params is not None:
+                entry["ns_params"] = self._ns_params_for_env(ns_params, i)
+            metadata.append(entry)
         return metadata
 
     def _reset_frame_mask(self, info: dict, *, is_reset: bool) -> np.ndarray:
@@ -239,7 +254,7 @@ class MouseVectorEnv:
         *,
         reward: Any = None,
         is_reset: bool,
-    ) -> tuple[list[TensorDict], dict, list[dict]]:
+    ) -> tuple[list[TensorDict], list[dict], list[dict]]:
         reset_mask = self._reset_frame_mask(info, is_reset=is_reset)
 
         if is_reset:

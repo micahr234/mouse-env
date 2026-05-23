@@ -127,15 +127,15 @@ Actions are **not** echoed in `data` — they are input to `step()` only.
 
 ## Output: `metadata`
 
-**Not model input — training & analysis.** Context aligned with `data[i]`. You typically do not tokenize or embed this into the sequence model, but it is often used to support training (expert Q-values, auxiliary losses), analyze performance, track env identity across parallel streams, or inspect non-stationary dynamics. For env `i`, read:
+**Not model input — training & analysis.** Per-env context aligned with `data[i]`. You typically do not tokenize or embed this into the sequence model, but it is often used to support training (expert Q-values, auxiliary losses), analyze performance, track env identity across parallel streams, or inspect non-stationary dynamics. For env `i`, read `metadata[i]`:
 
 | Field | Always | Access |
 |-------|--------|--------|
-| `group_id` | yes | `metadata["group_ids"][i]` (e.g. `"CartPole-v1#0"`) |
-| `episode_index` | yes | `metadata["episode_index"][i]` |
-| `reward_episodic` | yes | `metadata["reward_episodic"][i]` — normalised training signal; `0.0` on reset frames |
-| `q_star` | no | `metadata["q_star"][i]` — expert Q-values when configured |
-| `ns_params` | no | non-stationary parameters (NS-Gym envs only) |
+| `group_id` | yes | `metadata[i]["group_id"]` (e.g. `"CartPole-v1#0"`) |
+| `episode_index` | yes | `metadata[i]["episode_index"]` |
+| `reward_episodic` | yes | `metadata[i]["reward_episodic"]` — normalised training signal; `0.0` on reset frames |
+| `q_star` | no | `metadata[i]["q_star"]` — expert Q-values when configured |
+| `ns_params` | no | `metadata[i]["ns_params"]` — non-stationary parameters (NS-Gym envs only) |
 
 ---
 
@@ -154,7 +154,7 @@ Each field is a (possibly empty) list of floats:
 - **`[value]`** — env `i` finished once; one entry per finish on this step.
 - **`[v1, v2, …]`** — env `i` finished multiple times on this step (unusual, but supported by the shape).
 
-Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `metadata["reward_episodic"][i]`.
+Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `metadata[i]["reward_episodic"]`.
 
 ---
 
@@ -166,7 +166,7 @@ What mouse-env adds on top:
 
 - **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` (e.g. `EnvConfig.ns_cartpole(...)`) instead of wiring NS-Gym scheduler/update classes by hand
 - **Standard observations** — `NSGymInterfaceWrapper` strips NS-Gym’s dict observations down to flat state vectors compatible with the rest of the stack
-- **`metadata["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
+- **`metadata[i]["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
 - **Same vector `step()` API** — non-stationary envs run through `make_vector_env` like CartPole or Atari
 
 Example: [examples/03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb).

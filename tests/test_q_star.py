@@ -45,11 +45,11 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
     env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata["q_star"]
-        assert q_star.shape == (1, 4)
+        q_star = metadata[0]["q_star"]
+        assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         # Optimal Q* should have a unique argmax per state.
-        assert q_star[0].max() >= q_star[0].min()
+        assert q_star.max() >= q_star.min()
     finally:
         env.close()
 
@@ -64,7 +64,8 @@ def test_metadata_q_star_synthetic_matches_action_dim() -> None:
     env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
-        assert metadata["q_star"].shape == (2, 3)
+        assert metadata[0]["q_star"].shape == (3,)
+        assert metadata[1]["q_star"].shape == (3,)
     finally:
         env.close()
 
@@ -91,10 +92,10 @@ def test_sb3_local_path_injects_q_star_without_hf(
         env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata["q_star"]
-        assert q_star.shape == (1, 2)
+        q_star = metadata[0]["q_star"]
+        assert q_star.shape == (2,)
         # PPO has no predict_q — wrapper falls back to one-hot expert actions.
-        assert np.allclose(q_star.sum(axis=1), 1.0)
+        assert np.isclose(q_star.sum(), 1.0)
         assert np.all((q_star == 0.0) | (q_star == 1.0))
     finally:
         env.close()
@@ -145,10 +146,10 @@ def test_hf_q_table_vector_env_integration(
         env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata["q_star"]
-        assert q_star.shape == (1, 4)
+        q_star = metadata[0]["q_star"]
+        assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
-        assert not np.allclose(q_star.sum(axis=1), 1.0)
+        assert not np.isclose(q_star.sum(), 1.0)
     finally:
         env.close()
 
@@ -163,7 +164,7 @@ def test_q_star_absent_when_disabled() -> None:
     env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
-        assert "q_star" not in metadata
+        assert "q_star" not in metadata[0]
     finally:
         env.close()
 
