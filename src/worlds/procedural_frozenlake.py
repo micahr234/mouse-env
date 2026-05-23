@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 from collections import deque
 from collections.abc import Mapping
@@ -12,8 +11,8 @@ import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
-from mouse.envs.planning.value_iteration import solve_tabular_mdp
-from mouse.envs.utils import map_payload_to_json_str
+from mouse.envs.experts.value_iteration import solve_tabular_mdp
+from mouse.envs.utils import to_json_str
 
 from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID
 
@@ -29,12 +28,12 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
     :meth:`compute_q_table` applies those terminal rewards in value iteration.
 
     When ``emit_map`` is True, ``info["map"]`` is a **JSON string** encoding
-    ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse.envs.utils.map_payload_to_json_str`).
+    ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse.envs.utils.to_json_str`).
 
     Random maps place ``S`` / ``G`` and holes per ``hole_prob`` (see :meth:`_generate_map`).
 
     Map validity uses :meth:`_find_path_to_goal` so the shortest path from each ``S`` meets
-    ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse.envs.planning.solve_tabular_mdp`
+    ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse.envs.experts.solve_tabular_mdp`
     on Gymnasium's ``P`` matrix. The Q-table is rebuilt on every :meth:`reset`.
 
     ``step_penalty`` is added to the scalar reward on **every** :meth:`step` (including
@@ -150,7 +149,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
             desc=self._gridmap,
             is_slippery=bool(is_slippery),
         )
-        self._map_metadata = map_payload_to_json_str(self._make_map_metadata_dict())
+        self._map_metadata = to_json_str(self._make_map_metadata_dict())
         self._map_dirty = True
         self._q_table: np.ndarray | None = None
 

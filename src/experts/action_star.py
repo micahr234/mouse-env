@@ -56,10 +56,6 @@ def _to_batched_q_values(value: Any, num_envs: int) -> np.ndarray:
     return arr
 
 
-def _to_batched_q_star(value: Any, num_envs: int) -> np.ndarray:
-        return _to_batched_q_values(value=value, num_envs=num_envs)
-
-
 def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.ndarray:
     """Convert integer expert actions to one-hot Q-value rows.
 
@@ -152,7 +148,7 @@ class ExpertPolicyAdapter:
         value = infos.get("q_star", None)
         if value is None:
             return None
-        return _to_batched_q_star(value=value, num_envs=num_envs)
+        return _to_batched_q_values(value=value, num_envs=num_envs)
 
     def q_star_from_action_star_infos(
         self,
@@ -224,7 +220,7 @@ class ExpertPolicyAdapter:
         if not callable(predict_q):
             return None
         obs_in = self._policy_obs(obs=obs, done_mask=done_mask)
-        return _to_batched_q_star(value=predict_q(obs_in), num_envs=obs_in.shape[0])
+        return _to_batched_q_values(value=predict_q(obs_in), num_envs=obs_in.shape[0])
 
     def _policy_obs(self, obs: np.ndarray, done_mask: np.ndarray | None) -> np.ndarray:
         if self.external_frame_stack <= 1:
@@ -517,21 +513,12 @@ def build_q_star_source_adapter(
             )
         loaded: Any | None = None
         load_errors: list[str] = []
-        try:
-            with open(model_path, "rb") as f:
-                loaded = pickle.load(f)
-        except Exception as e:
-            load_errors.append(str(e))
-        if loaded is None:
+        for encoding in (None, "latin1", "bytes"):
             try:
+                kw: dict[str, Any] = {} if encoding is None else {"encoding": encoding}
                 with open(model_path, "rb") as f:
-                    loaded = pickle.load(f, encoding="latin1")
-            except Exception as e:
-                load_errors.append(str(e))
-        if loaded is None:
-            try:
-                with open(model_path, "rb") as f:
-                    loaded = pickle.load(f, encoding="bytes")
+                    loaded = pickle.load(f, **kw)
+                break
             except Exception as e:
                 load_errors.append(str(e))
         if loaded is None:

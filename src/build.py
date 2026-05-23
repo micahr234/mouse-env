@@ -122,12 +122,6 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
     return env_kwargs
 
 
-def _mdp_seed_for_index(config: EnvConfig, index: int) -> int:
-    if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
-        return int(config.seed) + index
-    return config.seed + index
-
-
 def _make_plain_single_env(
     config: EnvConfig,
     index: int,
@@ -135,7 +129,7 @@ def _make_plain_single_env(
     env_kwargs: dict[str, Any],
     atari_preprocessing: bool,
 ) -> gym.Env:
-    mdp_seed = _mdp_seed_for_index(config, index)
+    mdp_seed = config.seed + index
     seeded_at_construction = config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID)
     use_preprocessing = is_ale_env(config.group_id) and atari_preprocessing
 
@@ -180,7 +174,7 @@ def _build_plain_vector_env(
     resolved_q_star_source: dict[str, Any] | None,
     resolved_group_ids: list[str],
 ) -> gym.vector.VectorEnv:
-    atari_preprocessing = bool(config.atari_preprocessing) if config.atari_preprocessing is not None else False
+    atari_preprocessing = bool(config.atari_preprocessing)
     env_kwargs = _prepare_plain_env_kwargs(config, atari_preprocessing=atari_preprocessing)
 
     if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):

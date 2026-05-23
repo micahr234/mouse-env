@@ -10,8 +10,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.envs.registration import register, registry
 
-from mouse.envs.planning.value_iteration import solve_tabular_mdp
-from mouse.envs.utils import map_payload_to_json_str
+from mouse.envs.experts.value_iteration import solve_tabular_mdp
+from mouse.envs.utils import to_json_str
 
 from mouse.envs.env_ids import SYNTHETIC_ENV_ID
 
@@ -51,7 +51,7 @@ class SyntheticEnv(gym.Env[int, int]):
 
     ``step_penalty`` is added to the reward on every :meth:`step` (including terminal steps).
     :meth:`compute_q_table` applies the same offset so ``q_star`` matches rollout rewards when
-    ``emit_q_star`` is True (via :func:`~mouse.envs.planning.solve_tabular_mdp`).
+    ``emit_q_star`` is True (via :func:`~mouse.envs.experts.solve_tabular_mdp`).
 
     :meth:`step` sets ``truncated=False`` like Gymnasium ``FrozenLakeEnv`` / Procedural Frozen Lake
     wrapper; step-limit truncation is applied by ``TimeLimit`` when using
@@ -408,7 +408,7 @@ class SyntheticEnv(gym.Env[int, int]):
         info: dict[str, Any] = {}
         if self._map_dirty:
             if self.emit_map:
-                info["map"] = map_payload_to_json_str(self._map_payload_for_info())
+                info["map"] = to_json_str(self._map_payload_for_info())
             self._map_dirty = False
         if self.emit_q_star:
             info["q_star"] = self._q_star_for_obs(self._state)
@@ -427,7 +427,7 @@ class SyntheticEnv(gym.Env[int, int]):
         info: dict[str, Any] = {}
         if self._map_dirty:
             if self.emit_map:
-                info["map"] = map_payload_to_json_str(self._map_payload_for_info())
+                info["map"] = to_json_str(self._map_payload_for_info())
             self._map_dirty = False
         if self.emit_q_star:
             info["q_star"] = self._q_star_for_obs(self._state)

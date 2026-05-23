@@ -23,11 +23,10 @@ def normalize_group_id(group_id: str) -> str:
 
 
 def is_ns_gym_env(
-    group_id: str,
+    _group_id: str,
     non_stationary_params: dict[str, Any] | None,
 ) -> bool:
     """Return ``True`` when the env should use the NS-Gym backend."""
-    _ = group_id
     return bool(non_stationary_params)
 
 
@@ -180,11 +179,10 @@ class EnvConfig:
 
 
 def resolve_q_star_source_for_env(
-    group_id: str,
+    _group_id: str,
     q_star_source: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """Return the effective ``q_star_source`` config for an env."""
-    _ = group_id
     if q_star_source:
         return dict(q_star_source)
     return None

@@ -146,12 +146,43 @@ def test_first_step_is_reset_frame() -> None:
         env.close()
 
 
-def test_map_payload_json_roundtrip() -> None:
-    from mouse.envs.utils import map_payload_to_json_str
+def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, list, int]:
+    data, metadata, metrics = env.step(env.sample_random_actions())
+    for step in range(1, max_steps):
+        prev_time = data[0]["time"].item()
+        data, metadata, metrics = env.step(env.sample_random_actions())
+        if data[0]["time"].item() == 0 and prev_time > 0:
+            return data, metadata, metrics, step
+    raise AssertionError(f"no autoreset frame within {max_steps} steps")
+
+
+def test_autoreset_frame_zeros_reward_with_shift() -> None:
+    cfg = EnvConfig.cartpole(
+        seed=0,
+        num_envs=1,
+        max_episode_steps=50,
+        reward_scale=0.5,
+        reward_shift=1.0,
+        q_star_source=None,
+    )
+    env = make_vector_env(cfg)
+    try:
+        data, metadata, metrics, _step = _roll_until_autoreset(env)
+        assert data[0]["time"].item() == 0
+        assert data[0]["reward"].item() == 0.0
+        assert data[0]["done"].item() == 0
+        assert metadata[0]["reward_episodic"] == 0.0
+        assert metrics[0]["episode_cum_reward"] == []
+    finally:
+        env.close()
+
+
+def test_to_json_str_roundtrip() -> None:
+    from mouse.envs.utils import to_json_str
     import json
 
     payload = {"board": ["SFFF", "FFFF"], "rewards": {"3": 1.0}}
-    s = map_payload_to_json_str(payload)
+    s = to_json_str(payload)
     assert json.loads(s) == payload
 
 

@@ -4,7 +4,17 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for use. APIs will change without notice.
 
-**mouse-env** is the environment package for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning. It builds Gymnasium vector environments and reformats step output into TensorDict records for mouse-core training.
+**mouse-env** is the environment layer for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning.
+
+In standard RL, episodes are independent. The algorithm resets the environment, collects one episode, updates its weights, and repeats — what happened in episode 1 has no bearing on how the agent behaves in episode 2. In-context RL works differently: the agent is a sequence model whose context window spans *multiple episodes*. It reads its own history and adapts its strategy within a single forward pass, without a gradient update. Episode N is not a clean slate — the model uses what happened in episode N-1 (and earlier) to play better in episode N. Learning happens across episodes, not just within them.
+
+mouse-env is built around this model. Rather than treating each episode as an isolated run, it presents experience as a continuous stream where episode boundaries are just marked transitions — the environment resets automatically and the agent keeps running with its accumulated context. Every `step()` call returns the same three aligned lists regardless of env type:
+
+- **`data[i]`** — what the sequence model reads: `observation`, `reward`, `done`, and `time`. One record per env per step, ready to concatenate into a context window.
+- **`metadata[i]`** — what the training loop needs but the model doesn't see: expert Q-values (`q_star`) for imitation targets, normalised episodic return (`reward_episodic`) for the training signal, `episode_index` to track how many episodes the agent has seen, and `group_id` to identify which env variant this stream came from.
+- **`metrics[i]`** — what you log: true cumulative reward and episode length, emitted once at episode end (empty lists on every other step).
+
+Episode tracking, autoreset, expert Q-value annotation, and reward normalisation are all built in. The same API covers tabular MDPs, Atari, non-stationary envs, and any Gymnasium env — no boilerplate required.
 
 ## Install
 
@@ -22,7 +32,7 @@ source scripts/install.sh
 
 ## Quick start
 
-Configure a vector env, call `step()` in a loop, and read TensorDict records — no Gymnasium `info` dicts to parse.
+One config, one call to `make_vector_env`, then `step()` in a loop:
 
 ```python
 from mouse.envs import EnvConfig, make_vector_env
@@ -37,16 +47,13 @@ for _ in range(1000):
 env.close()
 ```
 
-Compared to Gymnasium:
+**A few things to know before writing code:**
 
-- **No `reset()`** — call `step()` only. The first call resets internally; actions on that call are ignored.
-- **Dict observations and actions** — `data[i]["observation"]` and `actions[i]["action"]` are both dicts of tensors. Observations use `discrete`, `continuous`, and/or `image`; actions use `discrete` or `continuous`, matching the env's spaces.
-- **Different return value** — `(data, metadata, metrics)` instead of `(obs, reward, terminated, truncated, info)`.
-  - **`data[i]`** — the sequence-model payload: `time`, `observation`, `reward`, and `done`.
-  - **`metadata[i]`** — per-env training and analysis context: `group_id`, `episode_index`, `reward_episodic`, optional `q_star`. Not fed directly to the sequence model, but commonly used to support training (shaped returns, expert targets, auxiliary losses), analyze performance, and debug rollouts.
-  - **`metrics[i]`** — episode finish stats for this step (empty lists if none). Used for evaluation and logging, not model input.
+- **Call `step()` only** — the first call resets internally and returns the initial observation with `reward=0`, `done=0`, and `time=0`; the actions on that call are ignored. Every call after applies actions normally. The same zeroed record appears whenever a sub-env finishes and resets the starting observation with `reward=0`, `done=0`, and `time=0` are given before normal stepping resumes.
+- **Observations and actions are dicts of tensors** — `data[i]["observation"]` uses keys `discrete`, `continuous`, and/or `image`. Actions follow the same shape: `actions[i]["action"]["discrete"]` or `["continuous"]`.
+- **`done` is an int** — `0` = running, `1` = terminated, `2` = truncated.
 
-See **[docs/guide.md](docs/guide.md)** for the full step API. Example Jupyter notebooks are in [`examples/`](examples/).
+See **[docs/guide.md](docs/guide.md)** for the full field reference. Example Jupyter notebooks are in [`examples/`](examples/).
 
 ## Environments & features
 

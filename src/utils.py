@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 
 
-def map_payload_to_json_str(payload: dict[str, Any]) -> str:
-    """Serialize a map payload dict (may contain numpy arrays) to a JSON string."""
+def to_json_str(payload: dict[str, Any]) -> str:
+    """Serialize a dict (may contain numpy arrays/scalars) to a JSON string."""
 
     def _convert(obj: Any) -> Any:
         if isinstance(obj, np.ndarray):

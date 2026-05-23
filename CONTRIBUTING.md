@@ -39,7 +39,7 @@ If you add a new feature, add or extend a test under [`tests/`](tests/) and/or a
 ## Code style
 
 - Python 3.12+, type-annotated throughout.
-- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, first-party worlds in `worlds/`, third-party bridges in `integrations/`, expert Q* plumbing in `experts/`, MDP solvers in `planning/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
+- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, first-party worlds in `worlds/`, third-party bridges in `integrations/`, expert Q* plumbing and MDP solvers in `experts/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 

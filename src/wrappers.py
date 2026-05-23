@@ -9,6 +9,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.core import ObservationWrapper
 from gymnasium.vector import SyncVectorEnv
+from gymnasium.wrappers.vector import TransformReward
 
 # -----------------------------------------------------------------------------
 # Observation helpers
@@ -80,57 +81,26 @@ def _is_reset_frame(info: dict[str, Any], num_envs: int) -> np.ndarray:
     return np.asarray(raw, dtype=np.bool_)
 
 
-class AutoresetFrameWrapper(gym.vector.VectorWrapper):
-    """Mark ``SyncVectorEnv`` autoreset observations in ``info["is_reset_frame"]``.
+class EpisodeTrackingWrapper(gym.vector.VectorWrapper):
+    """Detect autoreset frames; track per-episode statistics and step counters.
 
-    With ``AutoresetMode.NEXT_STEP``, a sub-env that finished on the previous step is
-    reset on the next ``step()`` call without applying the action. That transition has
-    zero reward and ``terminated/truncated == False``.
+    Combines ``AutoresetFrameWrapper``, ``EpisodeStatisticsWrapper``, and
+    ``StepCounterWrapper`` in a single pass. Injects ``is_reset_frame``,
+    ``episode_length``, ``episode_cum_reward``, ``episode_time``, and
+    ``episode_index`` into ``info`` on every step.
+
+    With ``AutoresetMode.NEXT_STEP``, a sub-env that finished on the previous
+    step is reset on the next ``step()`` without applying the action — that blank
+    frame has ``is_reset_frame=True`` and does not accumulate episode stats.
     """
-
-    def __init__(self, env: gym.vector.VectorEnv):
-        super().__init__(env)
-        self._prev_dones = np.zeros(env.num_envs, dtype=np.bool_)
-
-    def reset(self, **kwargs: Any):
-        obs, info = self.env.reset(**kwargs)
-        self._prev_dones[:] = False
-        info = dict(info)
-        info["is_reset_frame"] = np.zeros(self.num_envs, dtype=np.bool_)
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        is_reset_frame = self._prev_dones & ~dones
-        self._prev_dones = dones
-        info = dict(info)
-        info["is_reset_frame"] = is_reset_frame
-        return obs, reward, terminated, truncated, info
-
-
-class _RewardTransformWrapper(gym.vector.VectorWrapper):
-    """Scale and shift rewards: ``r_out = r * scale + shift``."""
-
-    def __init__(self, env: gym.vector.VectorEnv, scale: float, shift: float):
-        super().__init__(env)
-        self._scale = float(scale)
-        self._shift = float(shift)
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        reward = np.asarray(reward, dtype=np.float64) * self._scale + self._shift
-        return obs, reward, terminated, truncated, info
-
-
-class EpisodeStatisticsWrapper(gym.vector.VectorWrapper):
-    """Track per-episode length and cumulative reward; inject into ``info`` at episode boundaries."""
 
     def __init__(self, env: gym.vector.VectorEnv):
         super().__init__(env)
         n = env.num_envs
         self._episode_length = np.zeros(n, dtype=np.int64)
         self._episode_return = np.zeros(n, dtype=np.float64)
+        self._episode_time = np.zeros(n, dtype=np.int64)
+        self._episode_index = np.zeros(n, dtype=np.int64)
         self._prev_dones = np.zeros(n, dtype=np.bool_)
 
     def reset(self, **kwargs: Any):
@@ -138,63 +108,52 @@ class EpisodeStatisticsWrapper(gym.vector.VectorWrapper):
         n = self.num_envs
         self._episode_length[:] = 0
         self._episode_return[:] = 0.0
+        self._episode_time[:] = 0
         self._prev_dones[:] = False
         info = dict(info)
+        info["is_reset_frame"] = np.zeros(n, dtype=np.bool_)
         info["episode_length"] = np.full(n, np.nan, dtype=np.float64)
         info["episode_cum_reward"] = np.full(n, np.nan, dtype=np.float64)
+        info["episode_time"] = self._episode_time.copy()
+        info["episode_index"] = self._episode_index.copy()
         return obs, info
 
     def step(self, actions: Any):
         obs, reward, terminated, truncated, info = self.env.step(actions)
         dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        is_reset_frame = _is_reset_frame(info, self.num_envs)
+        is_reset_frame = self._prev_dones & ~dones
+        step_mask = ~is_reset_frame
+        # Reset counters for envs whose previous step ended the episode.
         self._episode_length[self._prev_dones] = 0
         self._episode_return[self._prev_dones] = 0.0
-        step_mask = ~is_reset_frame
+        self._episode_time[self._prev_dones] = 0
+        self._episode_index[self._prev_dones] += 1
+        # Accumulate only on real steps, not autoreset blank frames.
         self._episode_length[step_mask] += 1
         self._episode_return[step_mask] += np.asarray(reward, dtype=np.float64)[step_mask]
+        self._episode_time[step_mask] += 1
         episode_length_out = np.full(self.num_envs, np.nan, dtype=np.float64)
         episode_return_out = np.full(self.num_envs, np.nan, dtype=np.float64)
         episode_length_out[dones] = self._episode_length[dones].astype(np.float64)
         episode_return_out[dones] = self._episode_return[dones]
+        self._prev_dones = dones
         info = dict(info)
+        info["is_reset_frame"] = is_reset_frame
         info["episode_length"] = episode_length_out
         info["episode_cum_reward"] = episode_return_out
-        self._prev_dones = dones
+        info["episode_time"] = self._episode_time.copy()
+        info["episode_index"] = self._episode_index.copy()
         return obs, reward, terminated, truncated, info
 
 
-class StepCounterWrapper(gym.vector.VectorWrapper):
-    """Track per-env step counters and inject them into ``info``."""
+def _reward_scale_shift_func(scale: float, shift: float) -> Callable[[np.ndarray], np.ndarray]:
+    scale_f = float(scale)
+    shift_f = float(shift)
 
-    def __init__(self, env: gym.vector.VectorEnv):
-        super().__init__(env)
-        n = env.num_envs
-        self._episode_time = np.zeros(n, dtype=np.int64)
-        self._episode_index = np.zeros(n, dtype=np.int64)
-        self._prev_dones = np.zeros(n, dtype=np.bool_)
+    def transform(reward: np.ndarray) -> np.ndarray:
+        return np.asarray(reward, dtype=np.float64) * scale_f + shift_f
 
-    def reset(self, **kwargs: Any):
-        obs, info = self.env.reset(**kwargs)
-        self._episode_time[:] = 0
-        self._prev_dones[:] = False
-        info = dict(info)
-        info["episode_time"] = self._episode_time.copy()
-        info["episode_index"] = self._episode_index.copy()
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        is_reset_frame = _is_reset_frame(info, self.num_envs)
-        self._episode_time[self._prev_dones] = 0
-        self._episode_index[self._prev_dones] += 1
-        self._episode_time[~is_reset_frame] += 1
-        info = dict(info)
-        info["episode_time"] = self._episode_time.copy()
-        info["episode_index"] = self._episode_index.copy()
-        self._prev_dones = dones
-        return obs, reward, terminated, truncated, info
+    return transform
 
 
 class XformedRewardWrapper(gym.vector.VectorWrapper):
@@ -233,29 +192,8 @@ class XformedRewardWrapper(gym.vector.VectorWrapper):
         return obs, reward, terminated, truncated, info
 
 
-class DoneEncodingWrapper(gym.vector.VectorWrapper):
-    """Encode episode termination status as an integer into ``info["done"]``."""
-
-    def reset(self, **kwargs: Any):
-        obs, info = self.env.reset(**kwargs)
-        info = dict(info)
-        info["done"] = np.zeros(self.num_envs, dtype=np.int64)
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        terminated = np.asarray(terminated, dtype=np.bool_)
-        truncated = np.asarray(truncated, dtype=np.bool_)
-        done_int = np.zeros(self.num_envs, dtype=np.int64)
-        done_int[truncated] = 2
-        done_int[terminated] = 1
-        info = dict(info)
-        info["done"] = done_int
-        return obs, reward, terminated, truncated, info
-
-
 class EnvIdentityWrapper(gym.vector.VectorWrapper):
-    """Inject environment identity into ``info`` and expose convenience attributes."""
+    """Inject environment identity and done-status encoding into ``info``; expose convenience attributes."""
 
     def __init__(
         self,
@@ -292,21 +230,26 @@ class EnvIdentityWrapper(gym.vector.VectorWrapper):
     def sample_random_actions(self) -> np.ndarray:
         return np.asarray(self.action_space.sample())
 
-    def _inject(self, info: dict[str, Any]) -> dict[str, Any]:
-        info = dict(info)
-        info["group_id"] = self._group_id_arr.copy()
-        info["env_idx"] = self._env_idx_arr.copy()
-        return info
-
     def reset(self, **kwargs: Any):
         if "seed" not in kwargs:
             kwargs["seed"] = self.env_seed
         obs, info = self.env.reset(**kwargs)
-        return obs, self._inject(info)
+        info = dict(info)
+        info["done"] = np.zeros(self.num_envs, dtype=np.int64)
+        info["group_id"] = self._group_id_arr.copy()
+        info["env_idx"] = self._env_idx_arr.copy()
+        return obs, info
 
     def step(self, actions: Any):
         obs, reward, terminated, truncated, info = self.env.step(actions)
-        return obs, reward, terminated, truncated, self._inject(info)
+        done_int = np.zeros(self.num_envs, dtype=np.int64)
+        done_int[np.asarray(truncated, dtype=np.bool_)] = 2
+        done_int[np.asarray(terminated, dtype=np.bool_)] = 1
+        info = dict(info)
+        info["done"] = done_int
+        info["group_id"] = self._group_id_arr.copy()
+        info["env_idx"] = self._env_idx_arr.copy()
+        return obs, reward, terminated, truncated, info
 
 
 class QStarWrapper(gym.vector.VectorWrapper):
@@ -427,16 +370,10 @@ def build_vector_env_stack(
         observation_mode="different",
         autoreset_mode=gym.vector.AutoresetMode.NEXT_STEP,
     )
-
-    env = AutoresetFrameWrapper(env)
-
+    env = EpisodeTrackingWrapper(env)
     resolved_obs_key = resolve_obs_key(env, requested=obs_key)
-
-    env = EpisodeStatisticsWrapper(env)
-    env = _RewardTransformWrapper(env, scale=reward_scale, shift=reward_shift)
-    env = StepCounterWrapper(env)
+    env = TransformReward(env, func=_reward_scale_shift_func(reward_scale, reward_shift))
     env = XformedRewardWrapper(env, max_steps=max_steps_per_episode)
-    env = DoneEncodingWrapper(env)
     env = EnvIdentityWrapper(
         env, group_id=group_id, env_seed=seed, obs_key=resolved_obs_key, group_ids=group_ids
     )

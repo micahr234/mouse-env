@@ -46,7 +46,6 @@ packages = [
     "mouse.envs.worlds",
     "mouse.envs.integrations",
     "mouse.envs.experts",
-    "mouse.envs.planning",
 ]
 
 [tool.setuptools.package-dir]
@@ -54,7 +53,6 @@ packages = [
 "mouse.envs.worlds" = "src/worlds"
 "mouse.envs.integrations" = "src/integrations"
 "mouse.envs.experts" = "src/experts"
-"mouse.envs.planning" = "src/planning"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -92,8 +92,8 @@ class MouseVectorEnv:
         episode_length:     list[float]   — one value per finish on this step
 
     ``time`` is 0-based within the episode. Internal ``info["episode_time"]`` from
-    StepCounterWrapper is 1-based after the first real step; ``MouseVectorEnv`` maps this
-    at the public boundary. Initial reset records have ``time == 0``.
+    ``EpisodeTrackingWrapper`` is 1-based after the first real step; ``MouseVectorEnv``
+    maps this at the public boundary. Initial reset records have ``time == 0``.
     """
 
     def __init__(self, env: gym.vector.VectorEnv, group_ids: list[str]):
@@ -148,10 +148,10 @@ class MouseVectorEnv:
             self._needs_initial_reset = False
             obs, info = self._env.reset()
             return self._build_records(obs, info, is_reset=True)
-
-        raw_actions = self._unpack_actions(actions)
-        obs, reward, _terminated, _truncated, info = self._env.step(raw_actions)
-        return self._build_records(obs, info, reward=reward, is_reset=False)
+        else:
+            raw_actions = self._unpack_actions(actions)
+            obs, reward, _terminated, _truncated, info = self._env.step(raw_actions)
+            return self._build_records(obs, info, reward=reward, is_reset=False)
 
     def close(self) -> None:
         self._env.close()
