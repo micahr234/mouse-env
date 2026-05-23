@@ -1,6 +1,6 @@
 # MOUSE Environments
 
-<p align="center"><img src="docs/mouse-env.png" width="400"/></p>
+<p align="center"><img src="https://raw.githubusercontent.com/micahr234/mouse-env/main/docs/mouse-env.png" width="400"/></p>
 
 > **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
