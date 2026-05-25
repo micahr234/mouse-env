@@ -10,10 +10,10 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.envs.registration import register, registry
 
-from mouse.envs.experts.value_iteration import solve_tabular_mdp
-from mouse.envs.utils import to_json_str
+from mouse_envs.experts.value_iteration import solve_tabular_mdp
+from mouse_envs.utils import to_json_str
 
-from mouse.envs.env_ids import SYNTHETIC_ENV_ID
+from mouse_envs.env_ids import SYNTHETIC_ENV_ID
 
 
 def _uniform_n(
@@ -51,7 +51,7 @@ class SyntheticEnv(gym.Env[int, int]):
 
     ``step_penalty`` is added to the reward on every :meth:`step` (including terminal steps).
     :meth:`compute_q_table` applies the same offset so ``q_star`` matches rollout rewards when
-    ``emit_q_star`` is True (via :func:`~mouse.envs.experts.solve_tabular_mdp`).
+    ``emit_q_star`` is True (via :func:`~mouse_envs.experts.solve_tabular_mdp`).
 
     :meth:`step` sets ``truncated=False`` like Gymnasium ``FrozenLakeEnv`` / Procedural Frozen Lake
     wrapper; step-limit truncation is applied by ``TimeLimit`` when using
@@ -438,12 +438,12 @@ def ensure_synthetic_env_registered() -> None:
     """Register ``SyntheticEnv-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
-    by :func:`~mouse.envs.make_vector_env` when ``group_id`` matches
+    by :func:`~mouse_envs.make_vector_env` when ``group_id`` matches
     :data:`SYNTHETIC_ENV_ID`.
     """
     if SYNTHETIC_ENV_ID in registry:
         return
     register(
         id=SYNTHETIC_ENV_ID,
-        entry_point="mouse.envs.worlds.synthetic:SyntheticEnv",
+        entry_point="mouse_envs.worlds.synthetic:SyntheticEnv",
     )

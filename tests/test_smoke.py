@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mouse.envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_vector_env
 
 NS_PARAMS = {
     "length": {
@@ -178,7 +178,7 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
 
 
 def test_to_json_str_roundtrip() -> None:
-    from mouse.envs.utils import to_json_str
+    from mouse_envs.utils import to_json_str
     import json
 
     payload = {"board": ["SFFF", "FFFF"], "rewards": {"3": 1.0}}

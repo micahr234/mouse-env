@@ -24,7 +24,7 @@ import gymnasium as gym
 import numpy as np
 from huggingface_hub import hf_hub_download
 
-from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
+from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
 
 
 def _to_batched_action_star(value: Any, num_envs: int) -> np.ndarray:
@@ -73,7 +73,7 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
 class ExpertPolicyAdapter:
     """Adapter that extracts expert Q-values or optimal actions from various sources.
 
-    Used internally by :class:`~mouse.envs.wrappers.QStarWrapper` to populate
+    Used internally by :class:`~mouse_envs.wrappers.QStarWrapper` to populate
     ``info["metadata_q_star"]`` on each step. Instantiated by
     :func:`build_q_star_source_adapter`; do not construct directly.
 
@@ -651,7 +651,7 @@ def apply_q_star_source_env_kwargs(
         env_id: Gymnasium env id used to determine whether the env supports
             ``emit_q_star``.
         env_kwargs: Current env kwargs dict (not mutated; a copy is returned).
-        q_star_source: Expert source config; see :class:`~mouse.envs.config.EnvConfig`.
+        q_star_source: Expert source config; see :class:`~mouse_envs.config.EnvConfig`.
 
     Returns:
         A new ``dict`` with any required keys added. Returns ``env_kwargs`` unchanged

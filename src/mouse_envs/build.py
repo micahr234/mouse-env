@@ -7,22 +7,22 @@ from typing import Any
 
 import gymnasium as gym
 
-from mouse.envs.config import (
+from mouse_envs.config import (
     EnvConfig,
     is_ns_gym_env,
     normalize_group_id,
     resolve_q_star_source_for_env,
 )
-from mouse.envs.experts.action_star import apply_q_star_source_env_kwargs
-from mouse.envs.integrations.atari import (
+from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
+from mouse_envs.integrations.atari import (
     ensure_ale_registered,
     is_ale_env,
     wrap_atari_preprocessing,
 )
-from mouse.envs.integrations.ns_gym import make_ns_env
-from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
-from mouse.envs.format import MouseVectorEnv
-from mouse.envs.wrappers import (
+from mouse_envs.integrations.ns_gym import make_ns_env
+from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
+from mouse_envs.format import MouseVectorEnv
+from mouse_envs.wrappers import (
     ConstructionSeedWrapper,
     ObservationSliceWrapper,
     build_vector_env_stack,
@@ -99,7 +99,7 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
         q_star_source=config.q_star_source,
     )
     if config.group_id == PROCEDURAL_FROZENLAKE_ENV_ID:
-        from mouse.envs.worlds.procedural_frozenlake import ensure_procedural_frozenlake_registered
+        from mouse_envs.worlds.procedural_frozenlake import ensure_procedural_frozenlake_registered
 
         ensure_procedural_frozenlake_registered()
         random_map_wrapper_raw = env_kwargs.pop("random_map_wrapper", None)
@@ -108,7 +108,7 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
         elif random_map_wrapper_raw is not None:
             raise ValueError("env_kwargs.random_map_wrapper must be a dict when provided.")
     elif config.group_id == SYNTHETIC_ENV_ID:
-        from mouse.envs.worlds.synthetic import ensure_synthetic_env_registered
+        from mouse_envs.worlds.synthetic import ensure_synthetic_env_registered
 
         ensure_synthetic_env_registered()
     if config.render and "render_mode" not in env_kwargs:

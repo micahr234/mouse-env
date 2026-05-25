@@ -11,10 +11,10 @@ import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
-from mouse.envs.experts.value_iteration import solve_tabular_mdp
-from mouse.envs.utils import to_json_str
+from mouse_envs.experts.value_iteration import solve_tabular_mdp
+from mouse_envs.utils import to_json_str
 
-from mouse.envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID
+from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID
 
 
 class ProceduralFrozenLakeEnv(FrozenLakeEnv):
@@ -28,12 +28,12 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
     :meth:`compute_q_table` applies those terminal rewards in value iteration.
 
     When ``emit_map`` is True, ``info["map"]`` is a **JSON string** encoding
-    ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse.envs.utils.to_json_str`).
+    ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse_envs.utils.to_json_str`).
 
     Random maps place ``S`` / ``G`` and holes per ``hole_prob`` (see :meth:`_generate_map`).
 
     Map validity uses :meth:`_find_path_to_goal` so the shortest path from each ``S`` meets
-    ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse.envs.experts.solve_tabular_mdp`
+    ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse_envs.experts.solve_tabular_mdp`
     on Gymnasium's ``P`` matrix. The Q-table is rebuilt on every :meth:`reset`.
 
     ``step_penalty`` is added to the scalar reward on **every** :meth:`step` (including
@@ -507,12 +507,12 @@ def ensure_procedural_frozenlake_registered() -> None:
     """Register ``Procedural-FrozenLake-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
-    by :func:`~mouse.envs.make_vector_env` when ``group_id`` matches
+    by :func:`~mouse_envs.make_vector_env` when ``group_id`` matches
     :data:`PROCEDURAL_FROZENLAKE_ENV_ID`.
     """
     if PROCEDURAL_FROZENLAKE_ENV_ID in registry:
         return
     register(
         id=PROCEDURAL_FROZENLAKE_ENV_ID,
-        entry_point="mouse.envs.worlds.procedural_frozenlake:ProceduralFrozenLakeEnv",
+        entry_point="mouse_envs.worlds.procedural_frozenlake:ProceduralFrozenLakeEnv",
     )

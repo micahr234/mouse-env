@@ -1,6 +1,6 @@
 """Expert policies and MDP solvers for Q* metadata."""
 
-from mouse.envs.experts.value_iteration import (
+from mouse_envs.experts.value_iteration import (
     solve_tabular_mdp,
     value_iteration_gymnasium_p,
     value_iteration_tabular,

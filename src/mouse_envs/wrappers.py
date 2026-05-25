@@ -262,7 +262,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
         q_star_source: dict[str, Any],
         obs_key: str,
     ):
-        from mouse.envs.experts.action_star import build_q_star_source_adapter
+        from mouse_envs.experts.action_star import build_q_star_source_adapter
 
         super().__init__(env)
         self._adapter = build_q_star_source_adapter(
@@ -316,7 +316,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
                         f"expert policy returned shape {ast_arr.shape}, "
                         f"expected first dim {self.num_envs}."
                     )
-                from mouse.envs.experts.action_star import action_star_to_one_hot_q_star
+                from mouse_envs.experts.action_star import action_star_to_one_hot_q_star
 
                 q_star = action_star_to_one_hot_q_star(
                     actions=ast_arr, num_actions=self._action_dim

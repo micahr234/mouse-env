@@ -36,7 +36,7 @@ from ns_gym.update_functions import (
 )
 from ns_gym.wrappers import NSClassicControlWrapper, NSCliffWalkingWrapper, NSFrozenLakeWrapper
 
-from mouse.envs.config import is_ns_gym_env, normalize_group_id
+from mouse_envs.config import is_ns_gym_env, normalize_group_id
 
 # -----------------------------------------------------------------------------
 # NS-Gym: wrappers, update functions, single env, vector env
@@ -117,7 +117,7 @@ class NSGymInterfaceWrapper(gym.Wrapper):
     - **Info**: raw ground-truth keys are replaced with the output of
       :func:`extract_ns_params` (keys like ``"{param}"`` and ``"{param}_flag"``).
 
-    The :class:`~mouse.envs.wrappers.ObservationSliceWrapper` and the full wrapper stack can
+    The :class:`~mouse_envs.wrappers.ObservationSliceWrapper` and the full wrapper stack can
     then be applied on top without any NS-Gym-specific logic.
 
     Args:

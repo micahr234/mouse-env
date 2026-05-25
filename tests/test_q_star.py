@@ -9,8 +9,8 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from mouse.envs import EnvConfig, make_vector_env
-from mouse.envs.experts.action_star import (
+from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs.experts.action_star import (
     action_star_to_one_hot_q_star,
     build_q_star_source_adapter,
     normalize_q_star_source_name,
@@ -88,7 +88,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
     def _fail_hf_download(*_args, **_kwargs):
         raise AssertionError("hf_hub_download must not be called when path is set")
 
-    with patch("mouse.envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
+    with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)
@@ -142,7 +142,7 @@ def test_hf_q_table_vector_env_integration(
     def _fail_hf_download(*_args, **_kwargs):
         raise AssertionError("hf_hub_download must not be called when path is set")
 
-    with patch("mouse.envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
+    with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_vector_env(cfg)
     try:
         _data, metadata, _metrics = _rollout(env, steps=2)

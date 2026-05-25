@@ -32,7 +32,7 @@ def is_ns_gym_env(
 
 @dataclass
 class EnvConfig:
-    """Configuration for building a vector environment via :func:`mouse.envs.make_vector_env`."""
+    """Configuration for building a vector environment via :func:`mouse_envs.make_vector_env`."""
 
     group_id: str
     seed: int
@@ -51,7 +51,7 @@ class EnvConfig:
 
     def build(self):
         """Build a vector env from this config (alias for ``make_vector_env(self)``)."""
-        from mouse.envs.build import make_vector_env
+        from mouse_envs.build import make_vector_env
 
         return make_vector_env(self)
 

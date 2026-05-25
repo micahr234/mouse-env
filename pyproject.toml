@@ -42,17 +42,17 @@ environments = ["sys_platform == 'linux'"]
 
 [tool.setuptools]
 packages = [
-    "mouse.envs",
-    "mouse.envs.worlds",
-    "mouse.envs.integrations",
-    "mouse.envs.experts",
+    "mouse_envs",
+    "mouse_envs.worlds",
+    "mouse_envs.integrations",
+    "mouse_envs.experts",
 ]
 
 [tool.setuptools.package-dir]
-"mouse.envs" = "src"
-"mouse.envs.worlds" = "src/worlds"
-"mouse.envs.integrations" = "src/integrations"
-"mouse.envs.experts" = "src/experts"
+"mouse_envs" = "src/mouse_envs"
+"mouse_envs.worlds" = "src/mouse_envs/worlds"
+"mouse_envs.integrations" = "src/mouse_envs/integrations"
+"mouse_envs.experts" = "src/mouse_envs/experts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

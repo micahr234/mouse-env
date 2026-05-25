@@ -1,7 +1,5 @@
 {
-  "venvPath": ".",
-  "venv": ".venv",
   "pythonVersion": "3.12",
-  "include": ["src", "tests"],
+  "include": ["src/mouse_envs", "tests"],
   "extraPaths": ["src"]
 }

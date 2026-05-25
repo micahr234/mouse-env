@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mouse.envs import EnvConfig, make_vector_env
-from mouse.envs.integrations.atari import ensure_ale_registered, is_ale_env
+from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs.integrations.atari import ensure_ale_registered, is_ale_env
 
 ale_py = pytest.importorskip("ale_py")
 

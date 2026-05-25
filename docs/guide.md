@@ -17,7 +17,7 @@ For local development, clone the repo and run `source scripts/install.sh`.
 ## Create an environment
 
 ```python
-from mouse.envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
     group_id="CartPole-v1",

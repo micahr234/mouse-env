@@ -56,7 +56,7 @@ source scripts/install.sh
 ## Quick start
 
 ```python
-from mouse.envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig.cartpole(seed=0, num_envs=4, max_episode_steps=500)
 env = make_vector_env(cfg)
