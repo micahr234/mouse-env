@@ -18,10 +18,10 @@ from mouse_envs.experts.action_star import (
 
 
 def _rollout(env, steps: int = 3):
-    data, metadata, metrics = env.step(env.sample_random_actions())
+    result, metrics = env.step(env.sample_random_actions())
     for _ in range(steps - 1):
-        data, metadata, metrics = env.step(env.sample_random_actions())
-    return data, metadata, metrics
+        result, metrics = env.step(env.sample_random_actions())
+    return result, metrics
 
 
 def test_normalize_q_star_source_aliases() -> None:
@@ -44,8 +44,8 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
     cfg = EnvConfig.procedural_frozenlake(seed=3, num_envs=1, max_episode_steps=50)
     env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata[0]["q_star"]
+        result, _metrics = _rollout(env, steps=2)
+        q_star = result[0]["q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         # Optimal Q* should have a unique argmax per state.
@@ -63,9 +63,9 @@ def test_metadata_q_star_synthetic_matches_action_dim() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=2)
-        assert metadata[0]["q_star"].shape == (3,)
-        assert metadata[1]["q_star"].shape == (3,)
+        result, _metrics = _rollout(env, steps=2)
+        assert result[0]["q_star"].shape == (3,)
+        assert result[1]["q_star"].shape == (3,)
     finally:
         env.close()
 
@@ -91,8 +91,8 @@ def test_sb3_local_path_injects_q_star_without_hf(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata[0]["q_star"]
+        result, _metrics = _rollout(env, steps=2)
+        q_star = result[0]["q_star"]
         assert q_star.shape == (2,)
         # PPO has no predict_q — wrapper falls back to one-hot expert actions.
         assert np.isclose(q_star.sum(), 1.0)
@@ -145,8 +145,8 @@ def test_hf_q_table_vector_env_integration(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=2)
-        q_star = metadata[0]["q_star"]
+        result, _metrics = _rollout(env, steps=2)
+        q_star = result[0]["q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         assert not np.isclose(q_star.sum(), 1.0)
@@ -163,8 +163,8 @@ def test_q_star_absent_when_disabled() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=2)
-        assert "q_star" not in metadata[0]
+        result, _metrics = _rollout(env, steps=2)
+        assert "q_star" not in result[0]
     finally:
         env.close()
 

@@ -48,6 +48,7 @@ class EnvConfig:
     reward_scale: float = 1.0
     reward_shift: float = 0.0
     group_ids: list[str] | None = None
+    reset_reward: float = 0.0
 
     def build(self):
         """Build a vector env from this config (alias for ``make_vector_env(self)``)."""

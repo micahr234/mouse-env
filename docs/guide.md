@@ -39,31 +39,43 @@ Required fields:
 | `num_envs` | Number of environments stepped in parallel |
 | `max_episode_steps` | Episode length budget (also used for reward normalisation) |
 
-Everything else on `EnvConfig` is optional (reward shaping, partial observations, Atari preprocessing, non-stationary physics, expert Q-values, and so on). Check the docstrings when you need them.
+Everything else on `EnvConfig` is optional (reward shaping, partial observations, Atari preprocessing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
 
 ## Run a rollout
 
 There is **no public `reset()`**. Call `step()` only. The first call performs an internal reset and returns initial observations; actions on that call are ignored.
 
+mouse-env does this so the rollout stream has one shape from the first token onward. A reset frame still contains the same fields as a normal transition: `observation`, `reward`, `done`, `time`, and the rest of the training metadata. Training code does not need a separate method for the first environment interaction, and sequence models do not need to handle a shorter reset-only record.
+
 ```python
 for _ in range(1000):
     actions = env.sample_random_actions()
-    data, metadata, metrics = env.step(actions)
+    results, metrics = env.step(actions)
 ```
 
-Every `step()` returns the same three-part shape:
+Every `step()` returns the same two-part shape:
 
 ```python
-data, metadata, metrics = env.step(actions)
+results, metrics = env.step(actions)
 # actions[i]["action"]: dict — discrete or continuous (input to step)
-# data[i]:     sequence-model tokens — observation (dict), reward, done, time
-# metadata[i]: training & analysis — group_id, episode_index, reward_episodic, optional q_star
+# results[i]:  all per-step fields — observation, reward, done, time, group_id, episode_index, reward_episodic, optional q_star/ns_params
 # metrics[i]:  evaluation stats — cum reward, length
 ```
 
-**`data`** is the rollout stream you generally pass to an LLM or other sequence model. **`metadata`** and **`metrics`** sit alongside it at the same env index: they are not part of the model input by default, but **`metadata`** is often used to help training (e.g. Q* supervision), analyze performance, or inspect rollouts; **`metrics`** summarizes episode outcomes for evaluation and logging.
+**`results`** is the rollout stream. Each `results[i]` is a dict containing both the sequence-model inputs (observation, reward, done, time) and training/analysis context (group_id, episode_index, reward_episodic, and optionally q_star and ns_params). **`metrics`** sits alongside it at the same env index and summarizes episode outcomes for evaluation and logging.
 
-When a sub-environment finishes, it auto-resets on the next step. That autoreset frame looks like the initial reset frame: dummy reward and `done == 0`. The actual episode boundary is the step where `done` is non-zero.
+When a sub-environment finishes, it auto-resets on the next step. That autoreset frame looks like the initial reset frame: it uses the configured `reset_reward` and always has `done == 0`. The actual episode boundary is the step where `done` is non-zero.
+
+Configure `reset_reward` on `EnvConfig` when the initial/reset token should carry a value other than zero:
+
+```python
+cfg = EnvConfig.cartpole(
+    seed=0,
+    num_envs=4,
+    max_episode_steps=500,
+    reset_reward=0.0,
+)
+```
 
 ---
 
@@ -84,7 +96,7 @@ actions = [
 # Continuous env (e.g. CartPole with a Box action space would use "continuous"):
 # TensorDict({"action": {"continuous": torch.tensor([...])}}, batch_size=[])
 
-data, metadata, metrics = env.step(actions)
+results, metrics = env.step(actions)
 ```
 
 For continuous action spaces, use `"continuous"` instead of `"discrete"`.
@@ -93,12 +105,12 @@ For continuous action spaces, use `"continuous"` instead of `"discrete"`.
 
 ---
 
-## Output: `data`
+## Output: `results`
 
-**Model input.** `data` is what you generally feed to an LLM or sequence model — the per-step rollout stream. It is a list of length `num_envs`. Each element is a scalar TensorDict (`batch_size=[]`) with the same keys:
+`results` is a list of length `num_envs`. Each `results[i]` is a plain dict with all per-step fields:
 
 ```python
-TensorDict({
+{
     "time": torch.tensor(int, dtype=torch.int64),
     "observation": {
         "discrete":   torch.tensor([...], dtype=torch.int64),    # optional
@@ -107,41 +119,36 @@ TensorDict({
     },
     "reward": torch.tensor(float, dtype=torch.float32),
     "done": torch.tensor(int, dtype=torch.int64),
-}, batch_size=[])
+    "group_id": str,
+    "episode_index": int,
+    "reward_episodic": float,
+    # optional:
+    "q_star": np.ndarray,   # float64[action_dim], when configured
+    "ns_params": dict,      # NS-Gym envs only
+}
 ```
 
 ### Fields
 
-| Field | Description |
-|-------|-------------|
-| `time` | Step index within the current episode (0-based). `0` on reset frames. |
-| `observation` | **Dict** of tensors — any combination of `discrete`, `continuous`, and/or `image` (whichever keys the environment provides). Not a single flat vector. |
-| `reward` | Raw environment reward. `0.0` on reset frames (initial or autoreset). |
-| `done` | `0` running · `1` terminated · `2` truncated. `0` on reset frames. |
+| Field | Type | Description |
+|-------|------|-------------|
+| `time` | int64 tensor | Step index within the current episode (0-based). `0` on reset frames. |
+| `observation` | dict of tensors | Any combination of `discrete`, `continuous`, and/or `image` keys. |
+| `reward` | float32 tensor | Raw environment reward. Uses `reset_reward` on reset frames. |
+| `done` | int64 tensor | `0` running · `1` terminated · `2` truncated. Reset frames always use `0`. |
+| `group_id` | str | Env identity string (e.g. `"CartPole-v1#0"`). |
+| `episode_index` | int | Episode counter for this parallel env. |
+| `reward_episodic` | float | Normalised training signal; `0.0` on reset frames. |
+| `q_star` | float64 array | Expert Q-values when configured (optional). |
+| `ns_params` | dict | Current non-stationary parameters; NS-Gym envs only (optional). |
 
 Image observations (e.g. preprocessed Atari) are flattened vectors in `observation["image"]`.
-
-Actions are **not** echoed in `data` — they are input to `step()` only.
-
----
-
-## Output: `metadata`
-
-**Not model input — training & analysis.** Per-env context aligned with `data[i]`. You typically do not tokenize or embed this into the sequence model, but it is often used to support training (expert Q-values, auxiliary losses), analyze performance, track env identity across parallel streams, or inspect non-stationary dynamics. For env `i`, read `metadata[i]`:
-
-| Field | Always | Access |
-|-------|--------|--------|
-| `group_id` | yes | `metadata[i]["group_id"]` (e.g. `"CartPole-v1#0"`) |
-| `episode_index` | yes | `metadata[i]["episode_index"]` |
-| `reward_episodic` | yes | `metadata[i]["reward_episodic"]` — normalised training signal; `0.0` on reset frames |
-| `q_star` | no | `metadata[i]["q_star"]` — expert Q-values when configured |
-| `ns_params` | no | `metadata[i]["ns_params"]` — non-stationary parameters (NS-Gym envs only) |
 
 ---
 
 ## Output: `metrics`
 
-**Not model input — evaluation.** Episode statistics for the current step, aligned with `data[i]`. Use these to measure returns and episode lengths without parsing the rollout stream. For env `i`, read `metrics[i]`:
+**Not model input — evaluation.** Episode statistics for the current step, aligned with `results[i]`. Use these to measure returns and episode lengths without parsing the rollout stream. For env `i`, read `metrics[i]`:
 
 | Field | Description |
 |-------|-------------|
@@ -154,7 +161,7 @@ Each field is a (possibly empty) list of floats:
 - **`[value]`** — env `i` finished once; one entry per finish on this step.
 - **`[v1, v2, …]`** — env `i` finished multiple times on this step (unusual, but supported by the shape).
 
-Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `metadata[i]["reward_episodic"]`.
+Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `results[i]["reward_episodic"]`.
 
 ---
 
@@ -166,7 +173,7 @@ What mouse-env adds on top:
 
 - **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` (e.g. `EnvConfig.ns_cartpole(...)`) instead of wiring NS-Gym scheduler/update classes by hand
 - **Standard observations** — `NSGymInterfaceWrapper` strips NS-Gym’s dict observations down to flat state vectors compatible with the rest of the stack
-- **`metadata[i]["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
+- **`results[i]["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
 - **Same vector `step()` API** — non-stationary envs run through `make_vector_env` like CartPole or Atari
 
 Example: [examples/03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb).

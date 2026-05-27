@@ -88,7 +88,11 @@ def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
             resolved_group_ids=resolved_group_ids,
         )
 
-    return MouseVectorEnv(gym_env, resolved_group_ids)
+    return MouseVectorEnv(
+        gym_env,
+        resolved_group_ids,
+        reset_reward=config.reset_reward,
+    )
 
 
 def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -> dict[str, Any]:

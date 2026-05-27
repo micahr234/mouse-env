@@ -33,20 +33,19 @@ def test_atari_vector_preprocessing() -> None:
     env = make_vector_env(cfg)
     try:
         assert env.obs_key == "observation_image"
-        data, metadata, metrics = env.step(env.sample_random_actions())
-        assert len(data) == 2
-        assert len(metadata) == 2
+        result, metrics = env.step(env.sample_random_actions())
+        assert len(result) == 2
         assert len(metrics) == 2
-        assert "group_id" in metadata[0]
+        assert "group_id" in result[0]
 
-        batch = np.stack([td["observation"]["image"].numpy() for td in data])
+        batch = np.stack([r["observation"]["image"].numpy() for r in result])
         assert batch.shape == (2, 84 * 84)
         assert batch.dtype == np.float32
 
-        for td in data:
-            assert td["time"].item() == 0
-            assert td["reward"].item() == 0.0
-            assert td["done"].item() == 0
+        for r in result:
+            assert r["time"].item() == 0
+            assert r["reward"].item() == 0.0
+            assert r["done"].item() == 0
     finally:
         env.close()
 
@@ -62,10 +61,10 @@ def test_atari_multi_step_rollout() -> None:
     env = make_vector_env(cfg)
     try:
         env.step(env.sample_random_actions())
-        data, _metadata, _metrics = env.step(env.sample_random_actions())
-        assert data[0]["time"].item() >= 1
-        assert "discrete" not in data[0]["observation"]
-        assert "image" in data[0]["observation"]
+        result, _metrics = env.step(env.sample_random_actions())
+        assert result[0]["time"].item() >= 1
+        assert "discrete" not in result[0]["observation"]
+        assert "image" in result[0]["observation"]
     finally:
         env.close()
 
@@ -104,9 +103,9 @@ def test_atari_without_preprocessing() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        data, _metadata, _metrics = env.step(env.sample_random_actions())
+        result, _metrics = env.step(env.sample_random_actions())
         # Raw ALE frames are RGB; vector stack still flattens to observation.image.
-        img = data[0]["observation"]["image"]
+        img = result[0]["observation"]["image"]
         assert img.numel() == 210 * 160 * 3
     finally:
         env.close()

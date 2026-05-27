@@ -16,11 +16,11 @@ NS_PARAMS = {
 }
 
 
-def _rollout(env, steps: int = 5) -> tuple[list, list, list]:
-    data, metadata, metrics = env.step(env.sample_random_actions())
+def _rollout(env, steps: int = 5) -> tuple[list, list]:
+    result, metrics = env.step(env.sample_random_actions())
     for _ in range(steps - 1):
-        data, metadata, metrics = env.step(env.sample_random_actions())
-    return data, metadata, metrics
+        result, metrics = env.step(env.sample_random_actions())
+    return result, metrics
 
 
 def test_cartpole_step_contract() -> None:
@@ -32,15 +32,15 @@ def test_cartpole_step_contract() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        data, metadata, metrics = _rollout(env)
-        assert len(data) == 2
-        assert len(metadata) == 2
+        result, metrics = _rollout(env)
+        assert len(result) == 2
         assert len(metrics) == 2
-        assert metadata[0]["group_id"].endswith("#0")
-        assert metadata[1]["group_id"].endswith("#1")
-        for i, td in enumerate(data):
-            assert set(td.keys()) >= {"time", "observation", "reward", "done"}
-            assert "continuous" in td["observation"]
+        assert result[0]["group_id"].endswith("#0")
+        assert result[1]["group_id"].endswith("#1")
+        for i, r in enumerate(result):
+            assert set(r.keys()) >= {"time", "observation", "reward", "done", "group_id", "episode_index", "reward_episodic"}
+            assert "action" not in r
+            assert "continuous" in r["observation"]
             assert metrics[i]["episode_cum_reward"] == [] or isinstance(
                 metrics[i]["episode_cum_reward"][0], float
             )
@@ -52,14 +52,13 @@ def test_procedural_frozenlake_vector() -> None:
     cfg = EnvConfig.procedural_frozenlake(seed=0, num_envs=2, max_episode_steps=50)
     env = make_vector_env(cfg)
     try:
-        data, metadata, metrics = _rollout(env)
-        assert len(data) == 2
-        assert len(metadata) == 2
-        assert "q_star" in metadata[0]
-        assert metadata[0]["q_star"].shape == (4,)
-        assert metadata[1]["q_star"].shape == (4,)
-        for td in data:
-            assert "discrete" in td["observation"]
+        result, metrics = _rollout(env)
+        assert len(result) == 2
+        assert "q_star" in result[0]
+        assert result[0]["q_star"].shape == (4,)
+        assert result[1]["q_star"].shape == (4,)
+        for r in result:
+            assert "discrete" in r["observation"]
     finally:
         env.close()
 
@@ -68,11 +67,11 @@ def test_synthetic_vector() -> None:
     cfg = EnvConfig.synthetic(seed=0, num_envs=2, max_episode_steps=50)
     env = make_vector_env(cfg)
     try:
-        data, metadata, _metrics = _rollout(env)
-        assert len(data) == 2
-        assert "q_star" in metadata[0]
-        for td in data:
-            assert "discrete" in td["observation"]
+        result, _metrics = _rollout(env)
+        assert len(result) == 2
+        assert "q_star" in result[0]
+        for r in result:
+            assert "discrete" in r["observation"]
     finally:
         env.close()
 
@@ -86,9 +85,9 @@ def test_ns_cartpole() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=3)
-        assert "ns_params" in metadata[0]
-        assert "length" in metadata[0]["ns_params"]
+        result, _metrics = _rollout(env, steps=3)
+        assert "ns_params" in result[0]
+        assert "length" in result[0]["ns_params"]
     finally:
         env.close()
 
@@ -104,8 +103,8 @@ def test_reward_shaping() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        _data, metadata, _metrics = _rollout(env, steps=3)
-        assert isinstance(metadata[0]["reward_episodic"], float)
+        result, _metrics = _rollout(env, steps=3)
+        assert isinstance(result[0]["reward_episodic"], float)
     finally:
         env.close()
 
@@ -120,8 +119,8 @@ def test_partial_observability() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        data, _metadata, _metrics = _rollout(env, steps=2)
-        obs = data[0]["observation"]["continuous"]
+        result, _metrics = _rollout(env, steps=2)
+        obs = result[0]["observation"]["continuous"]
         assert obs.shape == (2,)
     finally:
         env.close()
@@ -136,23 +135,43 @@ def test_first_step_is_reset_frame() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        data, metadata, metrics = env.step(env.sample_random_actions())
-        assert data[0]["time"].item() == 0
-        assert data[0]["reward"].item() == 0.0
-        assert data[0]["done"].item() == 0
-        assert metadata[0]["reward_episodic"] == 0.0
+        result, metrics = env.step(env.sample_random_actions())
+        assert result[0]["time"].item() == 0
+        assert result[0]["reward"].item() == 0.0
+        assert result[0]["done"].item() == 0
+        assert result[0]["reward_episodic"] == 0.0
         assert metrics[0]["episode_cum_reward"] == []
     finally:
         env.close()
 
 
-def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, list, int]:
-    data, metadata, metrics = env.step(env.sample_random_actions())
+def test_reset_frame_reward_is_configurable_and_done_is_running() -> None:
+    cfg = EnvConfig.cartpole(
+        seed=0,
+        num_envs=1,
+        max_episode_steps=50,
+        q_star_source=None,
+        reset_reward=-1.0,
+    )
+    env = make_vector_env(cfg)
+    try:
+        result, metrics = env.step(env.sample_random_actions())
+        assert result[0]["time"].item() == 0
+        assert "action" not in result[0]
+        assert result[0]["reward"].item() == -1.0
+        assert result[0]["done"].item() == 0
+        assert result[0]["reward_episodic"] == 0.0
+        assert metrics[0]["episode_cum_reward"] == []
+    finally:
+        env.close()
+
+def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int]:
+    result, metrics = env.step(env.sample_random_actions())
     for step in range(1, max_steps):
-        prev_time = data[0]["time"].item()
-        data, metadata, metrics = env.step(env.sample_random_actions())
-        if data[0]["time"].item() == 0 and prev_time > 0:
-            return data, metadata, metrics, step
+        prev_time = result[0]["time"].item()
+        result, metrics = env.step(env.sample_random_actions())
+        if result[0]["time"].item() == 0 and prev_time > 0:
+            return result, metrics, step
     raise AssertionError(f"no autoreset frame within {max_steps} steps")
 
 
@@ -167,11 +186,11 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        data, metadata, metrics, _step = _roll_until_autoreset(env)
-        assert data[0]["time"].item() == 0
-        assert data[0]["reward"].item() == 0.0
-        assert data[0]["done"].item() == 0
-        assert metadata[0]["reward_episodic"] == 0.0
+        result, metrics, _step = _roll_until_autoreset(env)
+        assert result[0]["time"].item() == 0
+        assert result[0]["reward"].item() == 0.0
+        assert result[0]["done"].item() == 0
+        assert result[0]["reward_episodic"] == 0.0
         assert metrics[0]["episode_cum_reward"] == []
     finally:
         env.close()
