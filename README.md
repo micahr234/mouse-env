@@ -4,28 +4,24 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
-**mouse-env** is the environment layer for [MOUSE](https://github.com/micahr234/mouse-core), a modular PyTorch library for in-context reinforcement learning.
+**mouse-env** converts episodic reinforcement learning environments into continuing, non-episodic streams by concatenating episodes together.
 
-It gives tabular environments, Gymnasium control tasks, Atari, and non-stationary setups one compact API built for long streams of experience.
+Callers keep stepping through one long stream of experience. Episode boundaries remain visible in the returned data, but they do not require public `reset()` calls or interrupt the control flow.
 
 ---
 
 ## Why mouse-env exists 🧠
 
-Most reinforcement learning environment APIs are built around explicit episode resets:
+Most reinforcement learning environments are episodic:
 
 1. call `reset()` to start an episode
 2. call `step(action)` until the episode ends
 3. call `reset()` again
 4. repeat steps 2 and 3
 
-That pattern works well for traditional RL, where each episode is usually treated as its own little run.
+mouse-env wraps that reset-driven pattern and presents it as a **step-only API**. The underlying environment still terminates, truncates, and resets episodes; mouse-env emits those transitions as records in a single continuous stream.
 
-**In-context reinforcement learning (ICRL) is different.** The policy is usually a sequence model that acts from recent history, not just the current observation. It may fail on one episode, observe the rewards, and use that experience to do better on the next episode.
-
-For that setting, episode boundaries should stay visible in the data, but they should not force the caller into a reset-driven control flow.
-
-mouse-env therefore uses a **step-only API** that naturally fits ICRL: callers keep calling `step(actions)`, while episode boundaries travel along in the returned data instead of forcing explicit reset calls.
+This is useful when training sequence models or other agents that learn from recent history across episode boundaries. The model can see where episodes end, while the caller keeps using the same `step(actions)` loop.
 
 ---
 
@@ -52,7 +48,12 @@ Build an env, sample actions, and keep stepping:
 ```python
 from mouse_envs import EnvConfig, make_vector_env
 
-cfg = EnvConfig.cartpole(seed=0, num_envs=4, max_episode_steps=500)
+cfg = EnvConfig(
+    group_id="CartPole-v1",
+    seed=0,
+    num_envs=4,
+    max_episode_steps=500,
+)
 env = make_vector_env(cfg)
 
 for _ in range(1000):
@@ -96,30 +97,27 @@ This keeps the rollout stream uniform while still making episode structure expli
 
 ---
 
-## Included environments and integrations 🌎
+## Gymnasium environments and integrations 🌎
 
-mouse-env includes ready-to-use environments and integrations so you can start experimenting without wiring every backend by hand.
+Pass any Gymnasium environment id as `group_id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
+
+mouse-env also includes a few custom environments and optional integrations.
 
 ### Procedural Frozen Lake
 
 * **ID:** `Procedural-FrozenLake-v1`
-* **Config helper:** `EnvConfig.procedural_frozenlake()`
 * Random valid grid generation: size, holes, start/goal, and optional per-goal rewards.
-* Distinct from Gymnasium's fixed `FrozenLake-v1` benchmark.
+* Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Synthetic Environment
 
 * **ID:** `SyntheticEnv-v1`
-* **Config helper:** `EnvConfig.synthetic()`
 * Random finite discrete MDP for controlled tabular experiments.
+* Example: [examples/07_synthetic_env.ipynb](examples/07_synthetic_env.ipynb)
 
 ### NS-Gym integration
 
 mouse-env integrates [NS-Gym](https://github.com/scope-lab-vu/ns_gym) to support non-stationary dynamics through the same API.
-
-* `EnvConfig.ns_cartpole(non_stationary_params={...})` for scheduler and update configuration
-* `NSGymInterfaceWrapper` to normalize observations and expose `results[i]["ns_params"]`
-* Vectorized non-stationary streams with standard `(results, metrics)` outputs
 
 Example: [examples/03_ns_gym_oscillating.ipynb](examples/03_ns_gym_oscillating.ipynb)
 NS-Gym docs: [nsgym.io](https://nsgym.io/)
@@ -127,14 +125,6 @@ NS-Gym docs: [nsgym.io](https://nsgym.io/)
 ### Atari integration
 
 mouse-env keeps ALE/Gymnasium Atari semantics intact and exposes them through the same API.
-
-* `EnvConfig.atari()` preset:
-
-  * `AtariPreprocessing`
-  * frame skip 4
-  * grayscale 84×84
-  * no-op warm-up
-* Frames are surfaced in `data[i]["observation"]["image"]` as flattened tensors
 
 Requirement: `gymnasium[atari]` (`ale_py`).
 Example: [examples/04_atari_preprocessing.ipynb](examples/04_atari_preprocessing.ipynb)
@@ -149,10 +139,7 @@ mouse-env also includes a few knobs for augmenting and modifying environments.
 
 Expert Q-values are exposed as `results[i]["q_star"]`. They are useful for supervision, diagnostics, or comparing learned behavior against an expert or exact tabular solution.
 
-Available backends:
-
-* **`sb3_rl_zoo`** — pretrained Stable-Baselines3 policies from Hugging Face Hub. The CartPole preset uses this by default.
-* **`metadata_q_star`** — exact Q* solved from tabular MDP dynamics. Used by Procedural Frozen Lake and Synthetic Environment.
+Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Partial observability
 

@@ -2,7 +2,7 @@
 
 <p align="center"><img src="mouse-env.png" width="400" alt="MOUSE environments"/></p>
 
-**mouse-env** builds vector Gymnasium environments and formats their output for [mouse-core](https://github.com/micahr234/mouse-core) training. You configure an environment, call `step()`, and receive structured TensorDict records — no Gymnasium `info` dicts to parse.
+**mouse-env** builds vector Gymnasium environments and formats their output for [mouse-core](https://github.com/micahr234/mouse-core) training. You configure an environment, call `step()`, and receive plain dict records with tensor fields — no Gymnasium `info` dicts to parse.
 
 > MOUSE is in early development. APIs may change without notice.
 
@@ -28,7 +28,7 @@ cfg = EnvConfig(
 env = make_vector_env(cfg)
 ```
 
-`make_vector_env` returns a `MouseVectorEnv`. `EnvConfig` also has preset helpers (`cartpole()`, `procedural_frozenlake()`, `synthetic()`, `atari()`, and others) — see the `EnvConfig` docstrings for options.
+`make_vector_env` returns a `MouseVectorEnv`. Use `group_id` for any Gymnasium environment id, including custom ids registered by this package such as `Procedural-FrozenLake-v1` and `SyntheticEnv-v1`.
 
 Required fields:
 
@@ -40,6 +40,24 @@ Required fields:
 | `max_episode_steps` | Episode length budget (also used for reward normalisation) |
 
 Everything else on `EnvConfig` is optional (reward shaping, partial observations, Atari preprocessing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
+
+Expert Q-values are opt-in. Pass `q_star_source` directly when a rollout should include `results[i]["q_star"]`:
+
+```python
+cfg = EnvConfig(
+    group_id="CartPole-v1",
+    seed=0,
+    num_envs=4,
+    max_episode_steps=500,
+    q_star_source={
+        "provider": "sb3_rl_zoo",
+        "algo": "ppo",
+        "repo_id": "sb3/ppo-CartPole-v1",
+        "filename": "ppo-CartPole-v1.zip",
+        "deterministic": True,
+    },
+)
+```
 
 ## Run a rollout
 
@@ -69,7 +87,8 @@ When a sub-environment finishes, it auto-resets on the next step. That autoreset
 Configure `reset_reward` on `EnvConfig` when the initial/reset token should carry a value other than zero:
 
 ```python
-cfg = EnvConfig.cartpole(
+cfg = EnvConfig(
+    group_id="CartPole-v1",
     seed=0,
     num_envs=4,
     max_episode_steps=500,
@@ -81,7 +100,7 @@ cfg = EnvConfig.cartpole(
 
 ## Input: actions
 
-Pass a `list[TensorDict]` of length `num_envs`. Like `observation` in `data`, each **`action` is a dict** — use `"discrete"` or `"continuous"` to match the environment's action space:
+Pass a `list[TensorDict]` of length `num_envs`. Each **`action` is a dict** — use `"discrete"` or `"continuous"` to match the environment's action space:
 
 ```python
 from tensordict import TensorDict
@@ -171,7 +190,7 @@ Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) 
 
 What mouse-env adds on top:
 
-- **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` (e.g. `EnvConfig.ns_cartpole(...)`) instead of wiring NS-Gym scheduler/update classes by hand
+- **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` instead of wiring NS-Gym scheduler/update classes by hand
 - **Standard observations** — `NSGymInterfaceWrapper` strips NS-Gym’s dict observations down to flat state vectors compatible with the rest of the stack
 - **`results[i]["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
 - **Same vector `step()` API** — non-stationary envs run through `make_vector_env` like CartPole or Atari
@@ -186,12 +205,12 @@ Example: [examples/03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillatin
 
 What mouse-env adds:
 
-- **`EnvConfig.atari()`** — bundles common `AtariPreprocessing` defaults (frame skip, grayscale 84×84, noop warm-up)
-- **Flattened `observation.image`** — preprocessed frames in the usual `data[i]` layout
+- **`atari_preprocessing=True`** — enables Gymnasium `AtariPreprocessing`; pass `atari_preprocessing_kwargs` for frame skip, screen size, noop warm-up, and related options
+- **Flattened `observation["image"]`** — preprocessed frames in the usual `results[i]` layout
 - **Same vector `step()` API** — parallel Atari streams like any other env
 
 Requires `gymnasium[atari]` / `ale_py`. Example: [examples/04_atari_preprocessing.ipynb](../examples/04_atari_preprocessing.ipynb).
 
 ## Examples
 
-Jupyter notebooks in [`examples/`](../examples/) walk through specific setups (random rollout, expert Q*, Atari preprocessing, partial observability, reward shaping, non-stationary physics).
+Jupyter notebooks in [`examples/`](../examples/) walk through specific setups (random rollout, expert Q*, non-stationary physics, Atari preprocessing, partial observability, reward shaping, and the synthetic tabular env).

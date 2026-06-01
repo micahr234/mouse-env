@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import gymnasium as gym
 import numpy as np
@@ -275,18 +275,18 @@ class QStarWrapper(gym.vector.VectorWrapper):
 
     @property
     def obs_key(self) -> str:
-        return self.env.obs_key
+        return cast(Any, self.env).obs_key
 
     @property
     def env_seed(self) -> int:
-        return self.env.env_seed
+        return cast(Any, self.env).env_seed
 
     @property
     def action_dim(self) -> int:
-        return self.env.action_dim
+        return cast(Any, self.env).action_dim
 
     def sample_random_actions(self) -> np.ndarray:
-        return self.env.sample_random_actions()
+        return cast(Any, self.env).sample_random_actions()
 
     def _attach(
         self,

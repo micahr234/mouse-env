@@ -36,8 +36,6 @@ from ns_gym.update_functions import (
 )
 from ns_gym.wrappers import NSClassicControlWrapper, NSCliffWalkingWrapper, NSFrozenLakeWrapper
 
-from mouse_envs.config import is_ns_gym_env, normalize_group_id
-
 # -----------------------------------------------------------------------------
 # NS-Gym: wrappers, update functions, single env, vector env
 # -----------------------------------------------------------------------------
@@ -284,7 +282,7 @@ def make_ns_env(
     and parameter trajectory.
 
     Args:
-        env_id: Plain env id (without the ``NS-`` prefix), e.g. ``"CartPole-v1"``.
+        env_id: Plain Gymnasium env id, e.g. ``"CartPole-v1"``.
         non_stationary_params: Scheduler + update-function config per parameter; see
             :func:`create_ns_gym_update_functions` for the format.
         max_steps_per_episode: Passed to ``gym.make(max_episode_steps=...)``.

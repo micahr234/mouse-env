@@ -24,11 +24,13 @@ def _rollout(env, steps: int = 3):
     return result, metrics
 
 
-def test_normalize_q_star_source_aliases() -> None:
-    assert normalize_q_star_source_name({"provider": "env_q_star"}) == "metadata_q_star"
-    assert normalize_q_star_source_name({"provider": "q_table"}) == "hf_q_table"
+def test_normalize_q_star_source_canonical_providers() -> None:
+    assert normalize_q_star_source_name({"provider": "metadata_q_star"}) == "metadata_q_star"
+    assert normalize_q_star_source_name({"provider": "hf_q_table"}) == "hf_q_table"
+    assert normalize_q_star_source_name({"provider": "sb3_rl_zoo"}) == "sb3_rl_zoo"
     assert normalize_q_star_source_name(None) is None
-    assert normalize_q_star_source_name({"provider": "none"}) is None
+    with pytest.raises(ValueError, match="Unsupported q_star_source.provider"):
+        normalize_q_star_source_name({"provider": "q_table"})
 
 
 def test_action_star_to_one_hot_q_star() -> None:
@@ -41,7 +43,13 @@ def test_action_star_to_one_hot_q_star() -> None:
 
 
 def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
-    cfg = EnvConfig.procedural_frozenlake(seed=3, num_envs=1, max_episode_steps=50)
+    cfg = EnvConfig(
+        group_id="Procedural-FrozenLake-v1",
+        seed=3,
+        num_envs=1,
+        max_episode_steps=50,
+        q_star_source={"provider": "metadata_q_star"},
+    )
     env = make_vector_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
@@ -55,11 +63,13 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
 
 
 def test_metadata_q_star_synthetic_matches_action_dim() -> None:
-    cfg = EnvConfig.synthetic(
+    cfg = EnvConfig(
+        group_id="SyntheticEnv-v1",
         seed=1,
         num_envs=2,
         max_episode_steps=50,
-        env_kwargs={"obs_size": 8, "action_size": 3},
+        kwargs={"obs_size": 8, "action_size": 3},
+        q_star_source={"provider": "metadata_q_star"},
     )
     env = make_vector_env(cfg)
     try:
@@ -73,7 +83,8 @@ def test_metadata_q_star_synthetic_matches_action_dim() -> None:
 def test_sb3_local_path_injects_q_star_without_hf(
     cartpole_ppo_zip_path: Path,
 ) -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -128,11 +139,12 @@ def test_hf_q_table_local_path_returns_full_q_values(
 def test_hf_q_table_vector_env_integration(
     tabular_qtable_pickle_path: Path,
 ) -> None:
-    cfg = EnvConfig.synthetic(
+    cfg = EnvConfig(
+        group_id="SyntheticEnv-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
-        env_kwargs={"obs_size": 16, "action_size": 4},
+        kwargs={"obs_size": 16, "action_size": 4},
         q_star_source={
             "provider": "hf_q_table",
             "path": str(tabular_qtable_pickle_path),
@@ -155,11 +167,11 @@ def test_hf_q_table_vector_env_integration(
 
 
 def test_q_star_absent_when_disabled() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:

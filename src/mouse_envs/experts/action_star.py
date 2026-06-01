@@ -430,27 +430,14 @@ def _infer_external_frame_stack(*, policy: Any, obs_key: str) -> int:
 def normalize_q_star_source_name(q_star_source: dict[str, Any] | None) -> str | None:
     if q_star_source is None:
         return None
-    raw_name = str(q_star_source.get("name", "")).strip().lower()
-    raw_provider = str(q_star_source.get("provider", "")).strip().lower()
-    raw = raw_name or raw_provider
-    if raw in ("", "none", "off", "disabled"):
-        return None
-    aliases = {
-        "metadata_q_star": "metadata_q_star",
-        "info_q_star": "metadata_q_star",
-        "env_q_star": "metadata_q_star",
-        "sb3_rl_zoo": "sb3_rl_zoo",
-        "hf_q_table": "hf_q_table",
-        "q_table": "hf_q_table",
-        "qlearning": "hf_q_table",
-    }
-    if raw not in aliases:
+    provider = str(q_star_source.get("provider", "")).strip().lower()
+    supported = {"metadata_q_star", "sb3_rl_zoo", "hf_q_table"}
+    if provider not in supported:
         raise ValueError(
-            f"Unsupported q_star_source.name={raw!r}. "
-            "Supported: 'metadata_q_star' (or 'env_q_star' / 'info_q_star'), "
-            "'sb3_rl_zoo', or 'hf_q_table'."
+            f"Unsupported q_star_source.provider={provider!r}. "
+            "Supported: 'metadata_q_star', 'sb3_rl_zoo', or 'hf_q_table'."
         )
-    return aliases[raw]
+    return provider
 
 
 def build_q_star_source_adapter(
@@ -463,17 +450,17 @@ def build_q_star_source_adapter(
 
     Resolves the provider name and loads the appropriate expert policy:
 
-    - ``"metadata_q_star"`` (aliases: ``"env_q_star"``, ``"info_q_star"``) — reads
-      Q-values or action hints directly from env info keys; no external model loaded.
+    - ``"metadata_q_star"`` — reads Q-values or action hints directly from env
+      info keys; no external model loaded.
     - ``"sb3_rl_zoo"`` — downloads and loads an SB3 policy checkpoint from the
       Hugging Face Hub (or a local ``path``).
-    - ``"hf_q_table"`` (alias: ``"q_table"``) — downloads and loads a tabular Q-table
-      pickle from the Hub (or a local ``path``).
+    - ``"hf_q_table"`` — downloads and loads a tabular Q-table pickle from the Hub
+      (or a local ``path``).
 
     Args:
         env_id: Environment id; used when selecting the correct SB3 algo or table.
-        q_star_source: Config dict with at minimum a ``"provider"`` (or ``"name"``) key.
-            ``None`` or an empty/disabled config returns ``None``.
+        q_star_source: Config dict with a canonical ``"provider"`` key. ``None``
+            disables expert Q-values.
         obs_key: Canonical observation key forwarded to the adapter (used for
             frame-stack inference and observation pre-processing).
         single_observation_space: The env's ``single_observation_space``; used to

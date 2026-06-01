@@ -24,11 +24,11 @@ def _rollout(env, steps: int = 5) -> tuple[list, list]:
 
 
 def test_cartpole_step_contract() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:
@@ -49,7 +49,13 @@ def test_cartpole_step_contract() -> None:
 
 
 def test_procedural_frozenlake_vector() -> None:
-    cfg = EnvConfig.procedural_frozenlake(seed=0, num_envs=2, max_episode_steps=50)
+    cfg = EnvConfig(
+        group_id="Procedural-FrozenLake-v1",
+        seed=0,
+        num_envs=2,
+        max_episode_steps=50,
+        q_star_source={"provider": "metadata_q_star"},
+    )
     env = make_vector_env(cfg)
     try:
         result, metrics = _rollout(env)
@@ -64,7 +70,13 @@ def test_procedural_frozenlake_vector() -> None:
 
 
 def test_synthetic_vector() -> None:
-    cfg = EnvConfig.synthetic(seed=0, num_envs=2, max_episode_steps=50)
+    cfg = EnvConfig(
+        group_id="SyntheticEnv-v1",
+        seed=0,
+        num_envs=2,
+        max_episode_steps=50,
+        q_star_source={"provider": "metadata_q_star"},
+    )
     env = make_vector_env(cfg)
     try:
         result, _metrics = _rollout(env)
@@ -76,8 +88,9 @@ def test_synthetic_vector() -> None:
         env.close()
 
 
-def test_ns_cartpole() -> None:
-    cfg = EnvConfig.ns_cartpole(
+def test_non_stationary_cartpole() -> None:
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -93,13 +106,13 @@ def test_ns_cartpole() -> None:
 
 
 def test_reward_shaping() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
         reward_scale=0.5,
         reward_shift=1.0,
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:
@@ -110,12 +123,12 @@ def test_reward_shaping() -> None:
 
 
 def test_partial_observability() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
         observation_indices=[0, 2],
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:
@@ -127,11 +140,11 @@ def test_partial_observability() -> None:
 
 
 def test_first_step_is_reset_frame() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:
@@ -146,11 +159,11 @@ def test_first_step_is_reset_frame() -> None:
 
 
 def test_reset_frame_reward_is_configurable_and_done_is_running() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
-        q_star_source=None,
         reset_reward=-1.0,
     )
     env = make_vector_env(cfg)
@@ -176,13 +189,13 @@ def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int
 
 
 def test_autoreset_frame_zeros_reward_with_shift() -> None:
-    cfg = EnvConfig.cartpole(
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
         reward_scale=0.5,
         reward_shift=1.0,
-        q_star_source=None,
     )
     env = make_vector_env(cfg)
     try:

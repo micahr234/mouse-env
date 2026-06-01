@@ -399,6 +399,7 @@ class SyntheticEnv(gym.Env[int, int]):
 
     def reset(
         self,
+        *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[int, dict[str, Any]]:

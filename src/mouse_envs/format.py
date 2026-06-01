@@ -29,10 +29,10 @@ class RolloutResult(TypedDict, total=False):
     Tensor fields are ``torch.Tensor``; other fields are plain Python types.
     """
 
-    time: Required[int]
+    time: Required[torch.Tensor]
     observation: Required[dict[str, Any]]
-    reward: Required[float]
-    done: Required[int]
+    reward: Required[torch.Tensor]
+    done: Required[torch.Tensor]
     group_id: Required[str]
     episode_index: Required[int]
     reward_episodic: Required[float]

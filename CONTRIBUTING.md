@@ -30,7 +30,7 @@ This installs the package in editable mode with dev dependencies (including Jupy
 
 Tests live under [`tests/`](tests/):
 
-- `test_smoke.py` — core env presets (CartPole, tabular envs, NS-Gym, reward shaping)
+- `test_smoke.py` — core env configs (CartPole, tabular envs, NS-Gym, reward shaping)
 - `test_q_star.py` — expert Q* adapters offline (local SB3 checkpoint, tabular pickle; no Hugging Face)
 - `test_atari.py` — ALE vector env + preprocessing (requires `ale_py` ROMs, already bundled with `gymnasium[atari]`)
 

@@ -7,12 +7,7 @@ from typing import Any
 
 import gymnasium as gym
 
-from mouse_envs.config import (
-    EnvConfig,
-    is_ns_gym_env,
-    normalize_group_id,
-    resolve_q_star_source_for_env,
-)
+from mouse_envs.config import EnvConfig
 from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
 from mouse_envs.integrations.atari import (
     ensure_ale_registered,
@@ -69,11 +64,13 @@ def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
     if config.num_envs < 1:
         raise ValueError(f"num_envs must be >= 1, got {config.num_envs}.")
 
-    resolved_group_id = normalize_group_id(config.group_id)
-    resolved_q_star_source = resolve_q_star_source_for_env(config.group_id, config.q_star_source)
+    resolved_group_id = config.group_id
+    resolved_q_star_source = (
+        dict(config.q_star_source) if config.q_star_source is not None else None
+    )
     resolved_group_ids = _resolve_group_ids(resolved_group_id, config.num_envs, config.group_ids)
 
-    if is_ns_gym_env(config.group_id, config.non_stationary_params):
+    if config.non_stationary_params:
         gym_env = _build_ns_vector_env(
             config=config,
             resolved_group_id=resolved_group_id,
@@ -180,6 +177,8 @@ def _build_plain_vector_env(
 ) -> gym.vector.VectorEnv:
     atari_preprocessing = bool(config.atari_preprocessing)
     env_kwargs = _prepare_plain_env_kwargs(config, atari_preprocessing=atari_preprocessing)
+    max_episode_steps = config.max_episode_steps
+    assert max_episode_steps is not None
 
     if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
         clean_kwargs = dict(env_kwargs)
@@ -202,7 +201,7 @@ def _build_plain_vector_env(
         env_fns=env_fns,
         group_id=resolved_group_id,
         seed=config.seed,
-        max_steps_per_episode=config.max_episode_steps,
+        max_steps_per_episode=max_episode_steps,
         obs_key=obs_key,
         reward_scale=config.reward_scale,
         reward_shift=config.reward_shift,
@@ -218,6 +217,8 @@ def _build_ns_vector_env(
     resolved_q_star_source: dict[str, Any] | None,
     resolved_group_ids: list[str],
 ) -> gym.vector.VectorEnv:
+    max_episode_steps = config.max_episode_steps
+    assert max_episode_steps is not None
     env_fns: list[Callable[[], gym.Env]] = [
         lambda: _make_ns_single_env(config) for _ in range(config.num_envs)
     ]
@@ -225,7 +226,7 @@ def _build_ns_vector_env(
         env_fns=env_fns,
         group_id=resolved_group_id,
         seed=config.seed,
-        max_steps_per_episode=config.max_episode_steps,
+        max_steps_per_episode=max_episode_steps,
         obs_key="observation",
         reward_scale=config.reward_scale,
         reward_shift=config.reward_shift,

@@ -21,14 +21,17 @@ def test_ensure_ale_registered() -> None:
 
 
 def test_atari_vector_preprocessing() -> None:
-    cfg = EnvConfig.atari(
-        "ALE/Pong-v5",
+    cfg = EnvConfig(
+        group_id="ALE/Pong-v5",
         seed=0,
         num_envs=2,
         max_episode_steps=500,
-        frame_skip=4,
-        screen_size=84,
-        noop_max=0,
+        atari_preprocessing=True,
+        atari_preprocessing_kwargs={
+            "frame_skip": 4,
+            "screen_size": 84,
+            "noop_max": 0,
+        },
     )
     env = make_vector_env(cfg)
     try:
@@ -51,12 +54,13 @@ def test_atari_vector_preprocessing() -> None:
 
 
 def test_atari_multi_step_rollout() -> None:
-    cfg = EnvConfig.atari(
-        "ALE/Pong-v5",
+    cfg = EnvConfig(
+        group_id="ALE/Pong-v5",
         seed=1,
         num_envs=1,
         max_episode_steps=500,
-        noop_max=0,
+        atari_preprocessing=True,
+        atari_preprocessing_kwargs={"noop_max": 0},
     )
     env = make_vector_env(cfg)
     try:
@@ -70,7 +74,14 @@ def test_atari_multi_step_rollout() -> None:
 
 
 def test_atari_discrete_action_sampling() -> None:
-    cfg = EnvConfig.atari("ALE/Pong-v5", seed=0, num_envs=1, max_episode_steps=100, noop_max=0)
+    cfg = EnvConfig(
+        group_id="ALE/Pong-v5",
+        seed=0,
+        num_envs=1,
+        max_episode_steps=100,
+        atari_preprocessing=True,
+        atari_preprocessing_kwargs={"noop_max": 0},
+    )
     env = make_vector_env(cfg)
     try:
         actions = env.sample_random_actions()
@@ -81,11 +92,12 @@ def test_atari_discrete_action_sampling() -> None:
 
 
 def test_atari_rejects_observation_indices() -> None:
-    cfg = EnvConfig.atari(
-        "ALE/Pong-v5",
+    cfg = EnvConfig(
+        group_id="ALE/Pong-v5",
         seed=0,
         num_envs=1,
         max_episode_steps=100,
+        atari_preprocessing=True,
         observation_indices=[0, 1, 2],
     )
     with pytest.raises(ValueError, match="observation_indices is not supported"):

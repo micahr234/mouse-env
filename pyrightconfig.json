@@ -1,5 +1,8 @@
 {
   "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportPrivateImportUsage": false,
   "include": ["src/mouse_envs", "tests"],
   "extraPaths": ["src"]
 }
