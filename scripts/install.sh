@@ -66,7 +66,7 @@ setup_venv() {
 
     # Install project dependencies (core + all optional extras).
     log "Installing project dependencies..."
-    if ! uv pip install -e ".[dev]" --python .venv/bin/python; then
+    if ! uv pip install -e ".[dev,all]" --python .venv/bin/python; then
         error "Failed to install project dependencies"
         exit 1
     fi

@@ -65,7 +65,8 @@ class MouseVectorEnv:
 
     Every ``result[i]`` contains:
         time (int64 tensor)      — step index within the episode (0-based)
-        observation (dict)       — tensors: "discrete", "continuous", and/or "image"
+        observation (dict)       — tensors: "discrete", "continuous", and/or "image",
+                                   each keeping its native shape (images stay 2-D/3-D)
         reward (float32 tensor)  — raw per-step reward; reset default on reset frames
         done (int64 tensor)      — 0=running, 1=terminated, 2=truncated; 0 on reset frames
         group_id (str)           — env identity string
@@ -173,15 +174,20 @@ class MouseVectorEnv:
         return raw
 
     def _obs_for_index(self, obs: Any, i: int) -> dict[str, torch.Tensor]:
-        """Build observation dict for env index ``i`` (may contain multiple keys)."""
+        """Build observation dict for env index ``i`` (may contain multiple keys).
+
+        Observations keep their native shape: image channels stay 2-D/3-D
+        (e.g. ``(84, 84)`` for preprocessed Atari), continuous channels stay 1-D,
+        and discrete channels stay scalar. No flattening is applied.
+        """
         if isinstance(obs, dict):
             fields: dict[str, torch.Tensor] = {}
             for k, v in obs.items():
-                arr = np.asarray(v[i]).flatten()
+                arr = np.asarray(v[i])
                 dtype = torch.int64 if k == "discrete" else torch.float32
                 fields[k] = torch.tensor(arr, dtype=dtype)
             return fields
-        raw = np.asarray(obs[i]).flatten()
+        raw = np.asarray(obs[i])
         if self.obs_key == "observation_discrete":
             return {"discrete": torch.tensor(raw, dtype=torch.int64)}
         if self.obs_key == "observation_image":

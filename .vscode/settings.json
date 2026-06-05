@@ -7,6 +7,5 @@
     "python.analysis.extraPaths": [],
     "cursorpyright.analysis.extraPaths": [],
     "workbench.editor.enablePreview": false,
-    "workbench.editor.enablePreviewFromQuickOpen": false,
-    "notebook.transientOutputs": true
+    "workbench.editor.enablePreviewFromQuickOpen": false
 }

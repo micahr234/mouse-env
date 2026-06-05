@@ -29,9 +29,13 @@ dependencies = [
 [project.optional-dependencies]
 atari = [
     "gymnasium[atari]>=1.2.3",
+    "opencv-python>=4.9",
 ]
 non-stationary = [
     "ns_gym>=1.0.10",
+]
+all = [
+    "mouse-env[atari,non-stationary]",
 ]
 dev = [
     "pyright",

@@ -50,7 +50,7 @@ def test_atari_vector_preprocessing() -> None:
         assert "group_id" in result[0]
 
         batch = np.stack([r["observation"]["image"].numpy() for r in result])
-        assert batch.shape == (2, 84 * 84)
+        assert batch.shape == (2, 84, 84)
         assert batch.dtype == np.float32
 
         for r in result:
@@ -111,8 +111,8 @@ def test_atari_without_preprocessing() -> None:
     env = make_vector_env(cfg)
     try:
         result, _metrics = env.step(env.sample_random_actions())
-        # Raw ALE frames are RGB; vector stack still flattens to observation.image.
+        # Raw ALE frames are RGB; observation.image keeps its native (210, 160, 3) shape.
         img = result[0]["observation"]["image"]
-        assert img.numel() == 210 * 160 * 3
+        assert tuple(img.shape) == (210, 160, 3)
     finally:
         env.close()

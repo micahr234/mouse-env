@@ -171,7 +171,7 @@ For continuous action spaces, use `"continuous"` instead of `"discrete"`.
 | `q_star` | float64 array | Expert Q-values when configured (optional). |
 | `ns_params` | dict | Surfaced when an env wrapper sets `info["ns_params"]` (e.g. non-stationary envs); optional. |
 
-Image observations (e.g. preprocessed Atari) are flattened vectors in `observation["image"]`.
+Observations keep their native shape. Image observations (e.g. preprocessed Atari) stay 2-D/3-D in `observation["image"]` — for example an 84×84 `AtariPreprocessing` frame arrives as an `(84, 84)` tensor, not a flat vector. Continuous channels stay 1-D and discrete channels stay scalar.
 
 ---
 
@@ -201,7 +201,7 @@ mouse-env has no per-environment integration code. Two general `EnvConfig` knobs
 - **`env_fn`** — build (and wrap) the env yourself in a zero-arg factory, instead of by `group_id`. mouse-env calls it once per parallel env, so return a fresh instance each time. This is where you apply any Gymnasium wrapper (preprocessing, observation transforms, time limits, and so on). It's also how you use envs such as Atari (`gymnasium.wrappers.AtariPreprocessing`) or non-stationary NS-Gym envs — construct and wrap them in the factory; see the examples below.
 - **`observation_kind`** — force the observation channel: `"continuous"`, `"discrete"`, or `"image"`. When `None` (default), mouse-env auto-detects from the observation space. Auto-detection cannot recognise image spaces (an image is a `uint8` `Box`, which otherwise looks discrete), so image envs must set `observation_kind="image"`.
 
-Envs that need an extra package install it via an optional extra: `pip install 'mouse-env[atari]'` (`ale_py`) or `pip install 'mouse-env[non-stationary]'` (`ns_gym`).
+Envs that need an extra package install it via an optional extra: `pip install 'mouse-env[atari]'` (`ale_py` + `opencv-python`) or `pip install 'mouse-env[non-stationary]'` (`ns_gym`). To pull every optional env in one go, use `pip install 'mouse-env[all]'`.
 
 ---
 
