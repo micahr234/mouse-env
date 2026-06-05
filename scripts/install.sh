@@ -74,17 +74,7 @@ setup_venv() {
     success "Project dependencies installed"
 }
 
-# Register the nbstripout git filter so notebook outputs are stripped on commit.
-setup_nbstripout() {
-    log "Registering nbstripout git filter..."
-    if ! .venv/bin/nbstripout --install --attributes .gitattributes; then
-        warn "Could not register nbstripout filter; notebook outputs will not be stripped automatically."
-        return
-    fi
-    success "nbstripout git filter registered"
-}
-
-# Main installation process: uv, venv, project dependencies, git filters
+# Main installation process: uv, venv, project dependencies
 main() {
     echo "Starting Installation"
     echo "=================================="
@@ -92,7 +82,6 @@ main() {
     log "Installing packages..."
     install_uv
     setup_venv
-    setup_nbstripout
 
     echo ""
     echo "Installation complete!"

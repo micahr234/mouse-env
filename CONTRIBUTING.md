@@ -19,13 +19,27 @@ cd mouse-env
 source scripts/install.sh
 ```
 
-This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks) and registers the [`nbstripout`](https://github.com/kynan/nbstripout) git filter so notebook outputs are stripped automatically on commit.
+This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks).
 
-If you set up the environment without `scripts/install.sh`, register the filter once with:
+Notebooks under [`examples/`](examples/) are committed **without** outputs. To keep them clean, configure a Jupyter pre-save hook that strips outputs on every save by adding this to your `~/.jupyter/jupyter_server_config.py`:
 
-```bash
-.venv/bin/nbstripout --install --attributes .gitattributes
+```python
+def scrub_output_pre_save(model, **kwargs):
+    if model["type"] != "notebook":
+        return
+    if model["content"]["nbformat"] != 4:
+        return
+    for cell in model["content"]["cells"]:
+        if cell["cell_type"] != "code":
+            continue
+        cell["outputs"] = []
+        cell["execution_count"] = None
+
+
+c.FileContentsManager.pre_save_hook = scrub_output_pre_save
 ```
+
+Run `jupyter --config-dir` to find the directory (create the file if it doesn't exist). If you edit notebooks outside Jupyter, clear outputs before committing.
 
 ## Pull request workflow
 
