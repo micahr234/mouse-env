@@ -59,13 +59,30 @@ def _is_discrete_like(space: gym.Space) -> bool:
     return False
 
 
-def resolve_obs_key(env: gym.vector.VectorEnv, requested: str = "observation") -> str:
-    """Return the canonical observation-dict key for this env's observation space."""
-    if requested == "observation_image":
-        return requested
+def resolve_obs_key(
+    env: gym.vector.VectorEnv, observation_kind: str | None = None
+) -> str:
+    """Return the canonical observation-dict key for this env's observation space.
+
+    ``observation_kind`` (``"continuous"``, ``"discrete"``, or ``"image"``) forces a
+    channel explicitly; ``None`` auto-detects from the observation space. Auto-detection
+    cannot recognise image spaces (an image is a ``uint8`` ``Box`` that otherwise looks
+    discrete), so image envs must set ``observation_kind="image"``.
+    """
+    if observation_kind == "image":
+        return "observation_image"
+    if observation_kind == "discrete":
+        return "observation_discrete"
+    if observation_kind == "continuous":
+        return "observation"
+    if observation_kind is not None:
+        raise ValueError(
+            f"observation_kind must be one of 'continuous', 'discrete', 'image', or None; "
+            f"got {observation_kind!r}."
+        )
     if _is_discrete_like(env.single_observation_space):
         return "observation_discrete"
-    return requested
+    return "observation"
 
 
 # -----------------------------------------------------------------------------
@@ -357,7 +374,7 @@ def build_vector_env_stack(
     group_id: str,
     seed: int,
     max_steps_per_episode: int,
-    obs_key: str = "observation",
+    observation_kind: str | None = None,
     reward_scale: float = 1.0,
     reward_shift: float = 0.0,
     q_star_source: dict[str, Any] | None = None,
@@ -371,7 +388,7 @@ def build_vector_env_stack(
         autoreset_mode=gym.vector.AutoresetMode.NEXT_STEP,
     )
     env = EpisodeTrackingWrapper(env)
-    resolved_obs_key = resolve_obs_key(env, requested=obs_key)
+    resolved_obs_key = resolve_obs_key(env, observation_kind)
     env = TransformReward(env, func=_reward_scale_shift_func(reward_scale, reward_shift))
     env = XformedRewardWrapper(env, max_steps=max_steps_per_episode)
     env = EnvIdentityWrapper(

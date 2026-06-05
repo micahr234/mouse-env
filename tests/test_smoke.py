@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
+import gymnasium as gym
 import numpy as np
 import pytest
 
 from mouse_envs import EnvConfig, make_vector_env
-
-NS_PARAMS = {
-    "length": {
-        "scheduler": "continuous",
-        "update_function": "oscillating",
-        "update_kwargs": {"delta": 0.01},
-    }
-}
 
 
 def _rollout(env, steps: int = 5) -> tuple[list, list]:
@@ -84,23 +77,6 @@ def test_synthetic_vector() -> None:
         assert "q_star" in result[0]
         for r in result:
             assert "discrete" in r["observation"]
-    finally:
-        env.close()
-
-
-def test_non_stationary_cartpole() -> None:
-    cfg = EnvConfig(
-        group_id="CartPole-v1",
-        seed=0,
-        num_envs=1,
-        max_episode_steps=50,
-        non_stationary_params=NS_PARAMS,
-    )
-    env = make_vector_env(cfg)
-    try:
-        result, _metrics = _rollout(env, steps=3)
-        assert "ns_params" in result[0]
-        assert "length" in result[0]["ns_params"]
     finally:
         env.close()
 
@@ -216,6 +192,61 @@ def test_to_json_str_roundtrip() -> None:
     payload = {"board": ["SFFF", "FFFF"], "rewards": {"3": 1.0}}
     s = to_json_str(payload)
     assert json.loads(s) == payload
+
+
+def test_env_fn_factory() -> None:
+    def make_cartpole() -> gym.Env:
+        env = gym.make("CartPole-v1", max_episode_steps=50)
+        return gym.wrappers.TransformObservation(
+            env, lambda o: np.zeros_like(o), env.observation_space
+        )
+
+    cfg = EnvConfig(
+        group_id="CartPole-custom",
+        seed=0,
+        num_envs=2,
+        max_episode_steps=50,
+        env_fn=make_cartpole,
+    )
+    env = make_vector_env(cfg)
+    try:
+        result, _metrics = _rollout(env, steps=2)
+        assert len(result) == 2
+        assert result[0]["group_id"].endswith("#0")
+        obs = result[0]["observation"]["continuous"].numpy()
+        assert np.all(obs == 0.0)
+    finally:
+        env.close()
+
+
+def test_observation_kind_override() -> None:
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        max_episode_steps=50,
+        observation_kind="discrete",
+    )
+    env = make_vector_env(cfg)
+    try:
+        assert env.obs_key == "observation_discrete"
+        result, _metrics = _rollout(env, steps=2)
+        assert "discrete" in result[0]["observation"]
+    finally:
+        env.close()
+
+
+def test_observation_kind_invalid() -> None:
+    with pytest.raises(ValueError, match="observation_kind"):
+        make_vector_env(
+            EnvConfig(
+                group_id="CartPole-v1",
+                seed=0,
+                num_envs=1,
+                max_episode_steps=50,
+                observation_kind="rgb",
+            )
+        )
 
 
 def test_make_vector_env_requires_max_steps() -> None:

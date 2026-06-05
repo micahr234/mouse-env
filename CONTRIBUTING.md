@@ -7,7 +7,7 @@ MOUSE is actively developed and contributions are very welcome — whether that'
 - **Bug reports** — open a GitHub issue with a minimal reproduction and the full error traceback.
 - **Feature requests** — open an issue describing the use case. If you have a design idea, sketching it out in the issue first helps align before writing code.
 - **Pull requests** — see the workflow below.
-- **New environments** — if you add support for a new environment type or NS-Gym scheduler, sharing results as an issue or discussion is valuable.
+- **New environments** — if you add support for a new environment type, sharing results as an issue or discussion is valuable.
 - **Documentation** — edits to Markdown under `docs/` or the README are welcome (no doc site build step).
 
 ## Development setup
@@ -19,7 +19,13 @@ cd mouse-env
 source scripts/install.sh
 ```
 
-This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks).
+This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks) and registers the [`nbstripout`](https://github.com/kynan/nbstripout) git filter so notebook outputs are stripped automatically on commit.
+
+If you set up the environment without `scripts/install.sh`, register the filter once with:
+
+```bash
+.venv/bin/nbstripout --install --attributes .gitattributes
+```
 
 ## Pull request workflow
 
@@ -30,16 +36,17 @@ This installs the package in editable mode with dev dependencies (including Jupy
 
 Tests live under [`tests/`](tests/):
 
-- `test_smoke.py` — core env configs (CartPole, tabular envs, NS-Gym, reward shaping)
+- `test_smoke.py` — core env configs (CartPole, tabular envs, custom `env_fn`, reward shaping)
 - `test_q_star.py` — expert Q* adapters offline (local SB3 checkpoint, tabular pickle; no Hugging Face)
-- `test_atari.py` — ALE vector env + preprocessing (requires `ale_py` ROMs, already bundled with `gymnasium[atari]`)
+- `test_atari.py` — ALE vector env + preprocessing via `env_fn` (requires the `atari` extra / `ale_py` ROMs)
+- `test_ns_gym.py` — non-stationary env via `env_fn` (requires the `non-stationary` extra / `ns_gym`)
 
 If you add a new feature, add or extend a test under [`tests/`](tests/) and/or a notebook under [`examples/`](examples/).
 
 ## Code style
 
 - Python 3.12+, type-annotated throughout.
-- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, first-party worlds in `worlds/`, third-party bridges in `integrations/`, expert Q* plumbing and MDP solvers in `experts/`, public API in `__init__.py`. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
+- Follow the existing patterns: config in `config.py`, build in `build.py`, wrappers in `wrappers.py`, formatting in `format.py`, first-party worlds in `worlds/`, expert Q* plumbing and MDP solvers in `experts/`, public API in `__init__.py`. Third-party envs (Atari, NS-Gym) are built by users via `env_fn` rather than bundled integrations. User-facing docs live in [`docs/guide.md`](docs/guide.md); implementation details belong in code comments and docstrings.
 - Avoid silent fallbacks — if a precondition isn't met, raise a clear error.
 - Comments should explain *why*, not *what*.
 

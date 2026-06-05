@@ -9,12 +9,6 @@ import gymnasium as gym
 
 from mouse_envs.config import EnvConfig
 from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
-from mouse_envs.integrations.atari import (
-    ensure_ale_registered,
-    is_ale_env,
-    wrap_atari_preprocessing,
-)
-from mouse_envs.integrations.ns_gym import make_ns_env
 from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
 from mouse_envs.format import MouseVectorEnv
 from mouse_envs.wrappers import (
@@ -70,20 +64,12 @@ def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
     )
     resolved_group_ids = _resolve_group_ids(resolved_group_id, config.num_envs, config.group_ids)
 
-    if config.non_stationary_params:
-        gym_env = _build_ns_vector_env(
-            config=config,
-            resolved_group_id=resolved_group_id,
-            resolved_q_star_source=resolved_q_star_source,
-            resolved_group_ids=resolved_group_ids,
-        )
-    else:
-        gym_env = _build_plain_vector_env(
-            config=config,
-            resolved_group_id=resolved_group_id,
-            resolved_q_star_source=resolved_q_star_source,
-            resolved_group_ids=resolved_group_ids,
-        )
+    gym_env = _build_plain_vector_env(
+        config=config,
+        resolved_group_id=resolved_group_id,
+        resolved_q_star_source=resolved_q_star_source,
+        resolved_group_ids=resolved_group_ids,
+    )
 
     return MouseVectorEnv(
         gym_env,
@@ -92,7 +78,7 @@ def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
     )
 
 
-def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -> dict[str, Any]:
+def _prepare_plain_env_kwargs(config: EnvConfig) -> dict[str, Any]:
     env_kwargs = dict(config.kwargs or {})
     env_kwargs = apply_q_star_source_env_kwargs(
         env_id=config.group_id,
@@ -114,12 +100,6 @@ def _prepare_plain_env_kwargs(config: EnvConfig, *, atari_preprocessing: bool) -
         ensure_synthetic_env_registered()
     if config.render and "render_mode" not in env_kwargs:
         env_kwargs["render_mode"] = "human"
-    if is_ale_env(config.group_id):
-        ensure_ale_registered()
-    if is_ale_env(config.group_id) and atari_preprocessing:
-        env_kwargs["frameskip"] = 1
-    if config.observation_indices is not None and is_ale_env(config.group_id):
-        raise ValueError("observation_indices is not supported for ALE (Atari) envs.")
     return env_kwargs
 
 
@@ -128,41 +108,23 @@ def _make_plain_single_env(
     index: int,
     *,
     env_kwargs: dict[str, Any],
-    atari_preprocessing: bool,
 ) -> gym.Env:
     mdp_seed = config.seed + index
     seeded_at_construction = config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID)
-    use_preprocessing = is_ale_env(config.group_id) and atari_preprocessing
 
     def env_fn(s: int) -> gym.Env:
+        if config.env_fn is not None:
+            return config.env_fn()
         kw = dict(env_kwargs)
         if seeded_at_construction:
             kw["seed"] = s
-        env = gym.make(
+        return gym.make(
             config.group_id,
             max_episode_steps=config.max_episode_steps,
             **kw,
         )
-        return wrap_atari_preprocessing(
-            env,
-            enabled=use_preprocessing,
-            preprocessing_kwargs=config.atari_preprocessing_kwargs,
-        )
 
     env = ConstructionSeedWrapper(env_fn, seed=mdp_seed)
-    if config.observation_indices is not None:
-        env = ObservationSliceWrapper(env=env, indices=config.observation_indices)
-    return env
-
-
-def _make_ns_single_env(config: EnvConfig) -> gym.Env:
-    env = make_ns_env(
-        env_id=config.group_id,
-        non_stationary_params=config.non_stationary_params or {},
-        max_steps_per_episode=config.max_episode_steps,
-        env_kwargs=config.kwargs,
-        render=config.render,
-    )
     if config.observation_indices is not None:
         env = ObservationSliceWrapper(env=env, indices=config.observation_indices)
     return env
@@ -175,12 +137,11 @@ def _build_plain_vector_env(
     resolved_q_star_source: dict[str, Any] | None,
     resolved_group_ids: list[str],
 ) -> gym.vector.VectorEnv:
-    atari_preprocessing = bool(config.atari_preprocessing)
-    env_kwargs = _prepare_plain_env_kwargs(config, atari_preprocessing=atari_preprocessing)
+    env_kwargs = {} if config.env_fn is not None else _prepare_plain_env_kwargs(config)
     max_episode_steps = config.max_episode_steps
     assert max_episode_steps is not None
 
-    if config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
+    if config.env_fn is None and config.group_id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
         clean_kwargs = dict(env_kwargs)
         clean_kwargs.pop("seed", None)
     else:
@@ -191,43 +152,16 @@ def _build_plain_vector_env(
             config,
             i,
             env_kwargs=clean_kwargs,
-            atari_preprocessing=atari_preprocessing,
         )
         for i in range(config.num_envs)
     ]
 
-    obs_key = "observation_image" if is_ale_env(config.group_id) else "observation"
     return build_vector_env_stack(
         env_fns=env_fns,
         group_id=resolved_group_id,
         seed=config.seed,
         max_steps_per_episode=max_episode_steps,
-        obs_key=obs_key,
-        reward_scale=config.reward_scale,
-        reward_shift=config.reward_shift,
-        q_star_source=resolved_q_star_source,
-        group_ids=resolved_group_ids,
-    )
-
-
-def _build_ns_vector_env(
-    *,
-    config: EnvConfig,
-    resolved_group_id: str,
-    resolved_q_star_source: dict[str, Any] | None,
-    resolved_group_ids: list[str],
-) -> gym.vector.VectorEnv:
-    max_episode_steps = config.max_episode_steps
-    assert max_episode_steps is not None
-    env_fns: list[Callable[[], gym.Env]] = [
-        lambda: _make_ns_single_env(config) for _ in range(config.num_envs)
-    ]
-    return build_vector_env_stack(
-        env_fns=env_fns,
-        group_id=resolved_group_id,
-        seed=config.seed,
-        max_steps_per_episode=max_episode_steps,
-        obs_key="observation",
+        observation_kind=config.observation_kind,
         reward_scale=config.reward_scale,
         reward_shift=config.reward_shift,
         q_star_source=resolved_q_star_source,

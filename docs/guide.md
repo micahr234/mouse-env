@@ -30,6 +30,16 @@ env = make_vector_env(cfg)
 
 `make_vector_env` returns a `MouseVectorEnv`. Use `group_id` for any Gymnasium environment id, including custom ids registered by this package such as `Procedural-FrozenLake-v1` and `SyntheticEnv-v1`.
 
+To build the env yourself instead of by id, pass `env_fn` — a zero-arg factory returning a fresh Gymnasium env (mouse-env calls it once per parallel env, so it must return a new instance each time, not a shared one). `group_id` then acts purely as the identity label and `max_episode_steps` is still required for reward normalisation; `kwargs`, `render`, and the time limit become your factory's responsibility. This is the place to do construction and wrapping outside mouse-env (Atari preprocessing, non-stationary NS-Gym envs, and so on).
+
+```python
+def make_env():
+    env = gym.make("CartPole-v1", max_episode_steps=500)
+    return MyWrapper(env)
+
+cfg = EnvConfig(group_id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
+```
+
 Required fields:
 
 | Field | Purpose |
@@ -39,7 +49,7 @@ Required fields:
 | `num_envs` | Number of environments stepped in parallel |
 | `max_episode_steps` | Episode length budget (also used for reward normalisation) |
 
-Everything else on `EnvConfig` is optional (reward shaping, partial observations, Atari preprocessing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
+Everything else on `EnvConfig` is optional (reward shaping, partial observations, custom env wrappers, observation-channel routing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
 
 Expert Q-values are opt-in. Pass `q_star_source` directly when a rollout should include `results[i]["q_star"]`:
 
@@ -143,7 +153,7 @@ For continuous action spaces, use `"continuous"` instead of `"discrete"`.
     "reward_episodic": float,
     # optional:
     "q_star": np.ndarray,   # float64[action_dim], when configured
-    "ns_params": dict,      # NS-Gym envs only
+    "ns_params": dict,      # when an env wrapper sets info["ns_params"]
 }
 ```
 
@@ -159,7 +169,7 @@ For continuous action spaces, use `"continuous"` instead of `"discrete"`.
 | `episode_index` | int | Episode counter for this parallel env. |
 | `reward_episodic` | float | Normalised training signal; `0.0` on reset frames. |
 | `q_star` | float64 array | Expert Q-values when configured (optional). |
-| `ns_params` | dict | Current non-stationary parameters; NS-Gym envs only (optional). |
+| `ns_params` | dict | Surfaced when an env wrapper sets `info["ns_params"]` (e.g. non-stationary envs); optional. |
 
 Image observations (e.g. preprocessed Atari) are flattened vectors in `observation["image"]`.
 
@@ -184,33 +194,25 @@ Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) 
 
 ---
 
-## Non-stationary environments (NS-Gym)
+## Custom envs and observation routing
 
-[NS-Gym](https://github.com/scope-lab-vu/ns_gym) is an external open-source framework for non-stationary MDPs — mouse-env **uses** it; we did not create it. See the [NS-Gym docs](https://nsgym.io/) for the underlying schedulers, update functions, and wrappers.
+mouse-env has no per-environment integration code. Two general `EnvConfig` knobs cover environment-specific needs:
 
-What mouse-env adds on top:
+- **`env_fn`** — build (and wrap) the env yourself in a zero-arg factory, instead of by `group_id`. mouse-env calls it once per parallel env, so return a fresh instance each time. This is where you apply any Gymnasium wrapper (preprocessing, observation transforms, time limits, and so on). It's also how you use envs such as Atari (`gymnasium.wrappers.AtariPreprocessing`) or non-stationary NS-Gym envs — construct and wrap them in the factory; see the examples below.
+- **`observation_kind`** — force the observation channel: `"continuous"`, `"discrete"`, or `"image"`. When `None` (default), mouse-env auto-detects from the observation space. Auto-detection cannot recognise image spaces (an image is a `uint8` `Box`, which otherwise looks discrete), so image envs must set `observation_kind="image"`.
 
-- **Plain dict configs** — pass `non_stationary_params` on `EnvConfig` instead of wiring NS-Gym scheduler/update classes by hand
-- **Standard observations** — `NSGymInterfaceWrapper` strips NS-Gym’s dict observations down to flat state vectors compatible with the rest of the stack
-- **`results[i]["ns_params"]`** — current parameter values and change flags each step, for logging or auxiliary training signals
-- **Same vector `step()` API** — non-stationary envs run through `make_vector_env` like CartPole or Atari
-
-Example: [examples/03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb).
+Envs that need an extra package install it via an optional extra: `pip install 'mouse-env[atari]'` (`ale_py`) or `pip install 'mouse-env[non-stationary]'` (`ns_gym`).
 
 ---
 
-## Atari (ALE integration)
-
-[Atari Learning Environment (ALE)](https://github.com/Farama-Foundation/Arcade-Learning-Environment) envs are provided by Gymnasium — mouse-env **uses** them as-is; we did not modify the games. See the [Gymnasium Atari docs](https://gymnasium.farama.org/environments/atari/).
-
-What mouse-env adds:
-
-- **`atari_preprocessing=True`** — enables Gymnasium `AtariPreprocessing`; pass `atari_preprocessing_kwargs` for frame skip, screen size, noop warm-up, and related options
-- **Flattened `observation["image"]`** — preprocessed frames in the usual `results[i]` layout
-- **Same vector `step()` API** — parallel Atari streams like any other env
-
-Requires `gymnasium[atari]` / `ale_py`. Example: [examples/04_atari_preprocessing.ipynb](../examples/04_atari_preprocessing.ipynb).
-
 ## Examples
 
-Jupyter notebooks in [`examples/`](../examples/) walk through specific setups (random rollout, expert Q*, non-stationary physics, Atari preprocessing, partial observability, reward shaping, and the synthetic tabular env).
+Runnable Jupyter notebooks in [`examples/`](../examples/):
+
+- [01_random_rollout.ipynb](../examples/01_random_rollout.ipynb) — minimal end-to-end rollout and the `results`/`metrics` shape.
+- [02_q_star_expert.ipynb](../examples/02_q_star_expert.ipynb) — expert Q-values via `q_star_source` (Procedural Frozen Lake).
+- [03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb) — non-stationary CartPole (NS-Gym) built with an `env_fn` factory.
+- [04_atari_preprocessing.ipynb](../examples/04_atari_preprocessing.ipynb) — Atari Pong with `AtariPreprocessing` via `env_fn` + `observation_kind="image"`.
+- [05_partial_observability.ipynb](../examples/05_partial_observability.ipynb) — masking observation dimensions with `observation_indices`.
+- [06_reward_shaping.ipynb](../examples/06_reward_shaping.ipynb) — `reward_scale` / `reward_shift` and `reward_episodic`.
+- [07_synthetic_env.ipynb](../examples/07_synthetic_env.ipynb) — random finite discrete MDP for tabular experiments.

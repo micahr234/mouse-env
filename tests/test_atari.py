@@ -1,23 +1,33 @@
-"""Atari (ALE) integration tests — offline when ``ale_py`` ROMs are installed."""
+"""Atari (ALE) tests — built through the general ``env_fn`` + ``observation_kind`` API.
+
+mouse-env has no Atari-specific code. Atari is configured like any other env: build it in
+an ``env_fn`` factory (register ``ale_py``, ``gym.make``, then ``AtariPreprocessing``) and
+route the image observation with ``observation_kind="image"``.
+"""
 
 from __future__ import annotations
 
+import gymnasium as gym
 import numpy as np
 import pytest
 
 from mouse_envs import EnvConfig, make_vector_env
-from mouse_envs.integrations.atari import ensure_ale_registered, is_ale_env
 
 ale_py = pytest.importorskip("ale_py")
+pytest.importorskip("gymnasium.wrappers.atari_preprocessing")
+from gymnasium.wrappers import AtariPreprocessing  # noqa: E402
+
+gym.register_envs(ale_py)
 
 
-def test_is_ale_env() -> None:
-    assert is_ale_env("ALE/Pong-v5")
-    assert not is_ale_env("CartPole-v1")
+def _pong_factory(max_episode_steps: int, *, preprocess_kwargs: dict | None):
+    def make() -> gym.Env:
+        env = gym.make("ALE/Pong-v5", frameskip=1, max_episode_steps=max_episode_steps)
+        if preprocess_kwargs is not None:
+            env = AtariPreprocessing(env, **preprocess_kwargs)
+        return env
 
-
-def test_ensure_ale_registered() -> None:
-    ensure_ale_registered()
+    return make
 
 
 def test_atari_vector_preprocessing() -> None:
@@ -26,12 +36,10 @@ def test_atari_vector_preprocessing() -> None:
         seed=0,
         num_envs=2,
         max_episode_steps=500,
-        atari_preprocessing=True,
-        atari_preprocessing_kwargs={
-            "frame_skip": 4,
-            "screen_size": 84,
-            "noop_max": 0,
-        },
+        observation_kind="image",
+        env_fn=_pong_factory(
+            500, preprocess_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 0}
+        ),
     )
     env = make_vector_env(cfg)
     try:
@@ -59,8 +67,8 @@ def test_atari_multi_step_rollout() -> None:
         seed=1,
         num_envs=1,
         max_episode_steps=500,
-        atari_preprocessing=True,
-        atari_preprocessing_kwargs={"noop_max": 0},
+        observation_kind="image",
+        env_fn=_pong_factory(500, preprocess_kwargs={"noop_max": 0}),
     )
     env = make_vector_env(cfg)
     try:
@@ -79,8 +87,8 @@ def test_atari_discrete_action_sampling() -> None:
         seed=0,
         num_envs=1,
         max_episode_steps=100,
-        atari_preprocessing=True,
-        atari_preprocessing_kwargs={"noop_max": 0},
+        observation_kind="image",
+        env_fn=_pong_factory(100, preprocess_kwargs={"noop_max": 0}),
     )
     env = make_vector_env(cfg)
     try:
@@ -91,27 +99,14 @@ def test_atari_discrete_action_sampling() -> None:
         env.close()
 
 
-def test_atari_rejects_observation_indices() -> None:
-    cfg = EnvConfig(
-        group_id="ALE/Pong-v5",
-        seed=0,
-        num_envs=1,
-        max_episode_steps=100,
-        atari_preprocessing=True,
-        observation_indices=[0, 1, 2],
-    )
-    with pytest.raises(ValueError, match="observation_indices is not supported"):
-        make_vector_env(cfg)
-
-
 def test_atari_without_preprocessing() -> None:
     cfg = EnvConfig(
         group_id="ALE/Pong-v5",
         seed=0,
         num_envs=1,
         max_episode_steps=100,
-        atari_preprocessing=False,
-        kwargs={"frameskip": 1},
+        observation_kind="image",
+        env_fn=_pong_factory(100, preprocess_kwargs=None),
     )
     env = make_vector_env(cfg)
     try:

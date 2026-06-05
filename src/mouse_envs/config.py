@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+OBSERVATION_KINDS = ("continuous", "discrete", "image")
 
 
 @dataclass
@@ -16,10 +19,9 @@ class EnvConfig:
     max_episode_steps: int | None
     kwargs: dict | None = None
     render: bool = False
-    non_stationary_params: dict | None = None
     q_star_source: dict[str, Any] | None = None
-    atari_preprocessing: bool | None = None
-    atari_preprocessing_kwargs: dict | None = None
+    env_fn: Callable[[], Any] | None = None
+    observation_kind: str | None = None
     observation_indices: list[int] | None = None
     reward_scale: float = 1.0
     reward_shift: float = 0.0

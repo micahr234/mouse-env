@@ -72,7 +72,7 @@ class MouseVectorEnv:
         episode_index (int)      — episode counter for this parallel env
         reward_episodic (float)  — normalised training signal; 0.0 on reset frames
         q_star (optional)        — float64[action_dim] expert Q-values when configured
-        ns_params (optional)     — non-stationary parameters (NS-Gym envs only)
+        ns_params (optional)     — surfaced when an env wrapper sets info["ns_params"]
 
     Pass ``list[TensorDict]``; each ``actions[i]["action"]`` is a dict with
     ``"discrete"`` or ``"continuous"`` tensors.

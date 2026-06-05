@@ -4,24 +4,17 @@
 
 > **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
-**mouse-env** converts episodic reinforcement learning environments into continuing, non-episodic streams by concatenating episodes together.
+**mouse-env** turns episodic reinforcement learning environments into <u>continuing environments</u>. Instead of asking user code to alternate between `step()` and `reset()`, mouse-env handles resets internally so a rollout can continue through one uninterrupted `step()` loop.
 
-Callers keep stepping through one long stream of experience. Episode boundaries remain visible in the returned data, but they do not require public `reset()` calls or interrupt the control flow.
+Most RL benchmarks are episodic: an agent acts until termination or truncation, the caller calls `reset()`, and a new trial begins. That is a good interface when each episode is an independent sample. It is less natural when the experiment studies behavior **across multiple episodes**, where what the agent observes or discovers in one episode can affect what it does in a later one.
 
----
+You can stitch episodes together on top of Gymnasium yourself, but the result is usually ad hoc. Important choices become arbitrary: whether reset observations are kept, how episode boundaries are marked, and how rewards behave at the boundary. **mouse-env** makes the episode-to-continuing conversion explicit and consistent in three ways:
 
-## Why mouse-env exists 🧠
+* **Reset-free rollout.** Users keep calling `step(actions)`. When an episode ends, mouse-env resets the underlying environment internally and returns the next observation without requiring a public `reset()` call.
+* **Visible episode structure.** Terminations, truncations, and reset frames stay in the data returned by the environment, so agents and analysis code can see where one episode ended and the next began.
+* **Cross-episode friendly rewards.** In episodic RL, credit is cut off at the reset boundary. A reward in the next episode does not encourage useful behavior in the previous one. mouse-env keeps raw environment rewards available, and also exposes a transformed reward signal that allows credit to pass across resets.
 
-Most reinforcement learning environments are episodic:
-
-1. call `reset()` to start an episode
-2. call `step(action)` until the episode ends
-3. call `reset()` again
-4. repeat steps 2 and 3
-
-mouse-env wraps that reset-driven pattern and presents it as a **step-only API**. The underlying environment still terminates, truncates, and resets episodes; mouse-env emits those transitions as records in a single continuous stream.
-
-This is useful when training sequence models or other agents that learn from recent history across episode boundaries. The model can see where episodes end, while the caller keeps using the same `step(actions)` loop.
+The result is a continuing interface for episodic RL: ordinary episodic Gymnasium environments can generate reset-free trajectories for multi-episode problems, with visible episode boundaries and rewards that allow value to propagate across trials.
 
 ---
 
@@ -97,11 +90,11 @@ This keeps the rollout stream uniform while still making episode structure expli
 
 ---
 
-## Gymnasium environments and integrations 🌎
+## Gymnasium environments 🌎
 
 Pass any Gymnasium environment id as `group_id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
 
-mouse-env also includes a few custom environments and optional integrations.
+mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 
 ### Procedural Frozen Lake
 
@@ -115,20 +108,6 @@ mouse-env also includes a few custom environments and optional integrations.
 * Random finite discrete MDP for controlled tabular experiments.
 * Example: [examples/07_synthetic_env.ipynb](examples/07_synthetic_env.ipynb)
 
-### NS-Gym integration
-
-mouse-env integrates [NS-Gym](https://github.com/scope-lab-vu/ns_gym) to support non-stationary dynamics through the same API.
-
-Example: [examples/03_ns_gym_oscillating.ipynb](examples/03_ns_gym_oscillating.ipynb)
-NS-Gym docs: [nsgym.io](https://nsgym.io/)
-
-### Atari integration
-
-mouse-env keeps ALE/Gymnasium Atari semantics intact and exposes them through the same API.
-
-Requirement: `gymnasium[atari]` (`ale_py`).
-Example: [examples/04_atari_preprocessing.ipynb](examples/04_atari_preprocessing.ipynb)
-
 ---
 
 ## Environment Tools 🛠️
@@ -140,6 +119,24 @@ mouse-env also includes a few knobs for augmenting and modifying environments.
 Expert Q-values are exposed as `results[i]["q_star"]`. They are useful for supervision, diagnostics, or comparing learned behavior against an expert or exact tabular solution.
 
 Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
+
+### Bring your own env (`env_fn`)
+
+Instead of a `group_id` string, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `group_id` is still used as the identity label, and `max_episode_steps` is still required (for reward normalisation); `kwargs`, `render`, and the internal `max_episode_steps` time limit are left to your factory.
+
+```python
+def make_env():
+    env = gym.make("CartPole-v1", max_episode_steps=500)
+    return MyWrapper(env)  # apply any Gymnasium wrappers here
+
+cfg = EnvConfig(group_id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
+```
+
+This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.
+
+### Observation routing (`observation_kind`)
+
+Force the observation channel with `observation_kind` (`"continuous"`, `"discrete"`, or `"image"`). Defaults to auto-detection from the observation space; required (`"image"`) for image envs, which auto-detection cannot recognise.
 
 ### Partial observability
 
