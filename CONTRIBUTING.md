@@ -21,25 +21,9 @@ source scripts/install.sh
 
 This installs the package in editable mode with dev dependencies (including Jupyter for [`examples/`](examples/) notebooks).
 
-Notebooks under [`examples/`](examples/) are committed **without** outputs. To keep them clean, configure a Jupyter pre-save hook that strips outputs on every save by adding this to your `~/.jupyter/jupyter_server_config.py`:
+Notebooks under [`examples/`](examples/) are committed **without** outputs. The repo's workspace settings set `"notebook.transientOutputs": true` in [`.vscode/settings.json`](.vscode/settings.json), so Cursor/VS Code never writes cell outputs to disk when you run and save a notebook here.
 
-```python
-def scrub_output_pre_save(model, **kwargs):
-    if model["type"] != "notebook":
-        return
-    if model["content"]["nbformat"] != 4:
-        return
-    for cell in model["content"]["cells"]:
-        if cell["cell_type"] != "code":
-            continue
-        cell["outputs"] = []
-        cell["execution_count"] = None
-
-
-c.FileContentsManager.pre_save_hook = scrub_output_pre_save
-```
-
-Run `jupyter --config-dir` to find the directory (create the file if it doesn't exist). If you edit notebooks outside Jupyter, clear outputs before committing.
+If you edit notebooks with a different tool (browser Jupyter, `nbconvert`, scripts), that setting does not apply — clear outputs before committing, e.g. `jupyter nbconvert --clear-output --inplace examples/*.ipynb`.
 
 ## Pull request workflow
 
