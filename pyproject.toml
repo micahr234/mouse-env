@@ -17,8 +17,7 @@ classifiers = [
  "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mouse-core>=0.1.0",
-    "gymnasium[box2d]>=1.2.3",
+    "gymnasium>=1.2.3",
     "stable-baselines3>=2.0.0",
     "huggingface_hub>=1.5.0",
     "pillow>=12.1.1",
@@ -28,7 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 atari = [
-    "gymnasium[atari]>=1.2.3",
+    "gymnasium[all]>=1.2.3",
     "opencv-python>=4.9",
 ]
 non-stationary = [
@@ -63,6 +62,3 @@ packages = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv.sources]
-mouse-core = { git = "https://github.com/micahr234/mouse-core.git" }
