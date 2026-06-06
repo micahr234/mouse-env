@@ -27,6 +27,21 @@ def cartpole_ppo_zip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def pendulum_ppo_zip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Tiny locally trained PPO checkpoint on a Box action env (continuous actions)."""
+    root = tmp_path_factory.mktemp("sb3_continuous_fixtures")
+    path = root / "pendulum_ppo"
+    env = gym.make("Pendulum-v1")
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=64, verbose=0)
+    model.learn(total_timesteps=256)
+    model.save(str(path))
+    env.close()
+    zip_path = path.with_suffix(".zip")
+    assert zip_path.is_file()
+    return zip_path
+
+
+@pytest.fixture(scope="session")
 def tabular_qtable_pickle_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Tabular Q-table pickle for ``hf_q_table`` offline tests."""
     root = tmp_path_factory.mktemp("qtable_fixtures")

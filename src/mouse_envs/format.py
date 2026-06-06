@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Required, TypedDict, cast
 
 import gymnasium as gym
 import numpy as np
 import torch
-from tensordict import TensorDict
+from tensordict import TensorDict, TensorDictBase
 
 ACTION_KEY_DISCRETE = "discrete"
 ACTION_KEY_CONTINUOUS = "continuous"
@@ -21,6 +22,20 @@ TIME_KEY = "time"
 DONE_RUNNING = 0
 DONE_TERMINATED = 1
 DONE_TRUNCATED = 2
+
+
+def _torch_dtype_for_space(space: gym.Space) -> torch.dtype:
+    """Map a Gymnasium space to the torch dtype used to store its samples.
+
+    Integer/boolean spaces (``Discrete``, ``MultiDiscrete``, ``MultiBinary``, and
+    integer ``Box``) are stored as ``int64``; floating spaces as ``float32``. The
+    dtype is read from the space itself, never inferred from a channel/key name.
+    """
+    raw = getattr(space, "dtype", None)
+    dt = np.dtype(raw) if raw is not None else np.dtype(np.float32)
+    if np.issubdtype(dt, np.floating):
+        return torch.float32
+    return torch.int64
 
 
 class RolloutResult(TypedDict, total=False):
@@ -75,8 +90,11 @@ class MouseVectorEnv:
         q_star (optional)        — float64[action_dim] expert Q-values when configured
         ns_params (optional)     — surfaced when an env wrapper sets info["ns_params"]
 
-    Pass ``list[TensorDict]``; each ``actions[i]["action"]`` is a dict with
-    ``"discrete"`` or ``"continuous"`` tensors.
+    Both sides of the contract are dicts: each ``result[i]["observation"]`` is a
+    dict keyed by channel (``"discrete"``, ``"continuous"``, and/or ``"image"``),
+    and each action input must be a dict too. Pass ``list[TensorDict]`` where every
+    ``actions[i]["action"]`` is a dict with a ``"discrete"`` or ``"continuous"``
+    tensor; a bare tensor is rejected.
 
     ``metrics`` uses the same env index as ``result`` (``metrics[i]``):
         episode_cum_reward: list[float]   — empty unless env ``i`` finished on this step
@@ -98,6 +116,27 @@ class MouseVectorEnv:
         self._group_ids = group_ids
         self._needs_initial_reset = True
         self._reset_reward = float(reset_reward)
+        self._obs_channel, self._obs_dtypes = self._build_obs_schema()
+
+    def _build_obs_schema(self) -> tuple[str | None, dict[str, torch.dtype]]:
+        """Record the output observation key(s) and their dtypes from the space.
+
+        Computed once at construction so ``_obs_for_index`` never inspects key names
+        at runtime. Returns ``(single_channel, dtypes)`` where ``single_channel`` is
+        the lone output key for non-dict spaces (``None`` for ``Dict`` spaces) and
+        ``dtypes`` maps each output key to its stored torch dtype.
+        """
+        space = self._env.single_observation_space
+        if isinstance(space, gym.spaces.Dict):
+            dtypes = {
+                key: _torch_dtype_for_space(sub) for key, sub in space.spaces.items()
+            }
+            return None, dtypes
+        if self.obs_key == "observation_discrete":
+            return OBS_KEY_DISCRETE, {OBS_KEY_DISCRETE: torch.int64}
+        if self.obs_key == "observation_image":
+            return OBS_KEY_IMAGE, {OBS_KEY_IMAGE: torch.float32}
+        return OBS_KEY_CONTINUOUS, {OBS_KEY_CONTINUOUS: torch.float32}
 
     @property
     def num_envs(self) -> int:
@@ -154,19 +193,54 @@ class MouseVectorEnv:
     def close(self) -> None:
         self._env.close()
 
+    def _action_dict(self, td: TensorDict, index: int) -> Mapping[str, Any]:
+        """Return the action dict for env ``index``, enforcing the dict contract.
+
+        Each ``actions[i]["action"]`` must be a dict keyed by action type
+        (``"discrete"`` or ``"continuous"``); a bare tensor is rejected.
+        """
+        try:
+            entry = cast(Any, td)["action"]
+        except KeyError as exc:
+            raise ValueError(
+                f"actions[{index}] is missing the required 'action' entry."
+            ) from exc
+        if not isinstance(entry, (Mapping, TensorDictBase)):
+            raise ValueError(
+                f"actions[{index}]['action'] must be a dict keyed by action type "
+                f"('{ACTION_KEY_DISCRETE}' or '{ACTION_KEY_CONTINUOUS}'), "
+                f"got {type(entry).__name__}."
+            )
+        return entry
+
+    def _require_action_key(
+        self, entry: Mapping[str, Any], key: str, index: int
+    ) -> np.ndarray:
+        if key not in entry:
+            raise ValueError(
+                f"actions[{index}]['action'] must contain the '{key}' key for this "
+                f"action space; got keys {sorted(entry.keys())}."
+            )
+        return cast(Any, entry)[key].numpy()
+
     def _unpack_actions(self, actions: list[TensorDict]) -> np.ndarray:
         space = self._env.single_action_space
         if isinstance(space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete)):
             discrete_actions = [
-                cast(Any, td["action"])[ACTION_KEY_DISCRETE].numpy() for td in actions
+                self._require_action_key(
+                    self._action_dict(td, i), ACTION_KEY_DISCRETE, i
+                )
+                for i, td in enumerate(actions)
             ]
             raw = np.stack(
                 discrete_actions
             ).squeeze(-1).astype(np.int64)
         else:
             continuous_actions = [
-                cast(Any, td["action"])[ACTION_KEY_CONTINUOUS].numpy()
-                for td in actions
+                self._require_action_key(
+                    self._action_dict(td, i), ACTION_KEY_CONTINUOUS, i
+                )
+                for i, td in enumerate(actions)
             ]
             raw = np.stack(
                 continuous_actions
@@ -176,23 +250,21 @@ class MouseVectorEnv:
     def _obs_for_index(self, obs: Any, i: int) -> dict[str, torch.Tensor]:
         """Build observation dict for env index ``i`` (may contain multiple keys).
 
-        Observations keep their native shape: image channels stay 2-D/3-D
-        (e.g. ``(84, 84)`` for preprocessed Atari), continuous channels stay 1-D,
-        and discrete channels stay scalar. No flattening is applied.
+        Dtypes come from the schema recorded at construction
+        (:meth:`_build_obs_schema`), derived from the observation space rather than
+        from channel/key names. Observations keep their native shape: image channels
+        stay 2-D/3-D (e.g. ``(84, 84)`` for preprocessed Atari), continuous channels
+        stay 1-D, and discrete channels stay scalar. No flattening is applied.
         """
         if isinstance(obs, dict):
-            fields: dict[str, torch.Tensor] = {}
-            for k, v in obs.items():
-                arr = np.asarray(v[i])
-                dtype = torch.int64 if k == "discrete" else torch.float32
-                fields[k] = torch.tensor(arr, dtype=dtype)
-            return fields
-        raw = np.asarray(obs[i])
-        if self.obs_key == "observation_discrete":
-            return {"discrete": torch.tensor(raw, dtype=torch.int64)}
-        if self.obs_key == "observation_image":
-            return {"image": torch.tensor(raw, dtype=torch.float32)}
-        return {"continuous": torch.tensor(raw, dtype=torch.float32)}
+            return {
+                k: torch.tensor(np.asarray(v[i]), dtype=self._obs_dtypes[k])
+                for k, v in obs.items()
+            }
+        channel = cast(str, self._obs_channel)
+        return {
+            channel: torch.tensor(np.asarray(obs[i]), dtype=self._obs_dtypes[channel])
+        }
 
     def _build_metrics(self, info: dict, *, empty_episode_stats: bool = False) -> list[dict]:
         if empty_episode_stats:

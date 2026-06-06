@@ -5,6 +5,7 @@ from __future__ import annotations
 import gymnasium as gym
 import numpy as np
 import pytest
+import torch
 
 from mouse_envs import EnvConfig, make_vector_env
 
@@ -37,6 +38,135 @@ def test_cartpole_step_contract() -> None:
             assert metrics[i]["episode_cum_reward"] == [] or isinstance(
                 metrics[i]["episode_cum_reward"][0], float
             )
+    finally:
+        env.close()
+
+
+def test_pendulum_continuous_step_contract() -> None:
+    cfg = EnvConfig(
+        group_id="Pendulum-v1",
+        seed=0,
+        num_envs=2,
+        max_episode_steps=50,
+    )
+    env = make_vector_env(cfg)
+    try:
+        assert env.action_dim == 1
+        sampled = env.sample_random_actions()
+        action = sampled[0]["action"]
+        assert "continuous" in action
+        assert "discrete" not in action
+        assert action["continuous"].dtype == torch.float32
+        assert action["continuous"].shape == (1,)
+        result, metrics = _rollout(env)
+        assert len(result) == 2
+        for r in result:
+            assert "continuous" in r["observation"]
+            assert "action" not in r
+    finally:
+        env.close()
+
+
+def test_action_must_be_dict() -> None:
+    from tensordict import TensorDict
+
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        max_episode_steps=50,
+    )
+    env = make_vector_env(cfg)
+    try:
+        env.step(env.sample_random_actions())  # initial reset frame
+        bare = [
+            TensorDict({"action": torch.tensor([0])}, batch_size=[])
+            for _ in range(env.num_envs)
+        ]
+        with pytest.raises(ValueError, match="must be a dict"):
+            env.step(bare)
+    finally:
+        env.close()
+
+
+def test_action_dict_requires_matching_key() -> None:
+    from tensordict import TensorDict
+
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        max_episode_steps=50,
+    )
+    env = make_vector_env(cfg)
+    try:
+        env.step(env.sample_random_actions())  # initial reset frame
+        wrong_key = [
+            TensorDict(
+                {"action": {"continuous": torch.tensor([0.0])}}, batch_size=[]
+            )
+            for _ in range(env.num_envs)
+        ]
+        with pytest.raises(ValueError, match="discrete"):
+            env.step(wrong_key)
+    finally:
+        env.close()
+
+
+def test_dict_obs_dtype_follows_space_not_key_name() -> None:
+    class DictObsEnv(gym.Env):
+        def __init__(self) -> None:
+            self.observation_space = gym.spaces.Dict(
+                {
+                    "pos": gym.spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32),
+                    "tile": gym.spaces.Box(low=0, high=9, shape=(1,), dtype=np.int32),
+                }
+            )
+            self.action_space = gym.spaces.Discrete(2)
+
+        def reset(self, *, seed=None, options=None):
+            super().reset(seed=seed)
+            return {"pos": np.zeros(2, np.float32), "tile": np.array([3], np.int32)}, {}
+
+        def step(self, action):
+            return (
+                {"pos": np.zeros(2, np.float32), "tile": np.array([3], np.int32)},
+                0.0,
+                False,
+                False,
+                {},
+            )
+
+    cfg = EnvConfig(
+        group_id="DictObs",
+        seed=0,
+        num_envs=1,
+        max_episode_steps=10,
+        env_fn=lambda: DictObsEnv(),
+    )
+    env = make_vector_env(cfg)
+    try:
+        result, _metrics = _rollout(env, steps=2)
+        obs = result[0]["observation"]
+        # Float subspace -> float32; integer subspace -> int64, regardless of key name.
+        assert obs["pos"].dtype == torch.float32
+        assert obs["tile"].dtype == torch.int64
+    finally:
+        env.close()
+
+
+def test_observation_is_always_a_dict() -> None:
+    cfg = EnvConfig(
+        group_id="CartPole-v1",
+        seed=0,
+        num_envs=2,
+        max_episode_steps=50,
+    )
+    env = make_vector_env(cfg)
+    try:
+        result, _metrics = _rollout(env, steps=2)
+        for r in result:
+            assert isinstance(r["observation"], dict)
     finally:
         env.close()
 

@@ -6,6 +6,7 @@ Provides:
 - build_q_star_source_adapter: factory that reads a ``q_star_source`` config dict and
   returns the appropriate adapter (SB3 policy, tabular Q-table, or env-info passthrough).
 - action_star_to_one_hot_q_star: convert integer expert actions to one-hot Q-value rows.
+- action_star_to_continuous_q_star: surface continuous expert action vectors as q_star.
 - apply_q_star_source_env_kwargs: inject ``emit_q_star`` kwargs for first-party worlds.
 """
 
@@ -67,6 +68,24 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
     one_hot = np.zeros((actions.shape[0], num_actions), dtype=np.float64)
     one_hot[np.arange(actions.shape[0]), actions] = 1.0
     return one_hot
+
+
+def action_star_to_continuous_q_star(
+    actions: np.ndarray, num_envs: int, action_dim: int
+) -> np.ndarray:
+    """Surface continuous expert action vectors in the ``q_star`` slot.
+
+    Box action spaces have no Q-value-over-actions, so the expert's target action
+    vector itself is exposed as ``metadata_q_star``. Produces a
+    ``[num_envs, action_dim]`` float64 array.
+    """
+    arr = np.asarray(actions, dtype=np.float64).reshape(num_envs, -1)
+    if arr.shape[1] != action_dim:
+        raise ValueError(
+            f"continuous expert produced action vectors with width {arr.shape[1]}, "
+            f"expected action_dim {action_dim}."
+        )
+    return arr
 
 
 @dataclass
@@ -189,13 +208,15 @@ class ExpertPolicyAdapter:
                 just finished an episode (used to reset frame-stack history).
 
         Returns:
-            ``int64[num_envs]`` expert actions, or ``None`` if no external policy is set.
+            Expert actions with the policy's native dtype, or ``None`` if no external
+            policy is set. Discrete policies yield integer ``[num_envs]`` actions;
+            continuous (Box) policies yield float ``[num_envs, action_dim]`` actions.
         """
         if self.external_policy is None:
             return None
         obs_in = self._policy_obs(obs=obs, done_mask=done_mask)
         actions, _ = self.external_policy.predict(obs_in, deterministic=self.deterministic)
-        return np.asarray(actions, dtype=np.int64)
+        return np.asarray(actions)
 
     def q_star_from_observation(
         self,

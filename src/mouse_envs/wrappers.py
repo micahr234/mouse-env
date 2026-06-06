@@ -288,7 +288,8 @@ class QStarWrapper(gym.vector.VectorWrapper):
             obs_key=obs_key,
             single_observation_space=env.single_observation_space,
         )
-        self._action_dim = int(getattr(env.single_action_space, "n", 0))
+        self._action_dim = int(getattr(env, "action_dim", 0))
+        self._continuous = isinstance(env.single_action_space, gym.spaces.Box)
 
     @property
     def obs_key(self) -> str:
@@ -305,6 +306,28 @@ class QStarWrapper(gym.vector.VectorWrapper):
     def sample_random_actions(self) -> np.ndarray:
         return cast(Any, self.env).sample_random_actions()
 
+    def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
+        """Convert expert actions into the ``metadata_q_star`` representation.
+
+        Continuous (Box) action spaces surface the expert action vector directly;
+        discrete spaces produce one-hot Q-value rows over the action index.
+        """
+        if self._continuous:
+            from mouse_envs.experts.action_star import action_star_to_continuous_q_star
+
+            return action_star_to_continuous_q_star(
+                actions=ast, num_envs=self.num_envs, action_dim=self._action_dim
+            )
+        ast_arr = np.asarray(ast, dtype=np.int64).reshape(-1)
+        if ast_arr.shape[0] != self.num_envs:
+            raise ValueError(
+                f"expert policy returned shape {ast_arr.shape}, "
+                f"expected first dim {self.num_envs}."
+            )
+        from mouse_envs.experts.action_star import action_star_to_one_hot_q_star
+
+        return action_star_to_one_hot_q_star(actions=ast_arr, num_actions=self._action_dim)
+
     def _attach(
         self,
         obs: Any,
@@ -318,7 +341,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
             q_star = self._adapter.q_star_from_observation(
                 obs=np.asarray(obs), done_mask=done_mask
             )
-        if q_star is None:
+        if q_star is None and not self._continuous:
             q_star = self._adapter.q_star_from_action_star_infos(
                 infos=info, num_envs=self.num_envs, num_actions=self._action_dim
             )
@@ -327,17 +350,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
                 obs=np.asarray(obs), done_mask=done_mask
             )
             if ast is not None:
-                ast_arr = np.asarray(ast, dtype=np.int64).reshape(-1)
-                if ast_arr.shape[0] != self.num_envs:
-                    raise ValueError(
-                        f"expert policy returned shape {ast_arr.shape}, "
-                        f"expected first dim {self.num_envs}."
-                    )
-                from mouse_envs.experts.action_star import action_star_to_one_hot_q_star
-
-                q_star = action_star_to_one_hot_q_star(
-                    actions=ast_arr, num_actions=self._action_dim
-                )
+                q_star = self._action_star_to_q_star(ast)
         if q_star is not None:
             info = dict(info)
             info["metadata_q_star"] = np.asarray(q_star, dtype=np.float64)
