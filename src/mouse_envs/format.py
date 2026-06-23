@@ -48,7 +48,6 @@ class RolloutResult(TypedDict, total=False):
     observation: Required[dict[str, Any]]
     reward: Required[torch.Tensor]
     done: Required[torch.Tensor]
-    group_id: Required[str]
     episode_index: Required[int]
     reward_episodic: Required[float]
     q_star: Any
@@ -65,8 +64,10 @@ class RolloutMetrics(TypedDict):
 class MouseVectorEnv:
     """Wraps a Gymnasium vector env and returns (result, metrics).
 
-    ``result`` is a list of length ``num_envs``. Each ``result[i]`` is a dict
-    containing the full per-step record for environment ``i``.
+    ``names`` identifies the sub-envs by vector index. ``name`` returns the first
+    name, which is convenient for ``num_envs == 1``. ``result`` is a list of length
+    ``num_envs``. Each ``result[i]`` is a dict containing the full per-step record
+    for environment ``i``.
 
     Call ``step()`` only — there is no public ``reset()``. The first ``step()`` after
     construction performs an internal reset and returns initial observations with the
@@ -84,7 +85,6 @@ class MouseVectorEnv:
                                    each keeping its native shape (images stay 2-D/3-D)
         reward (float32 tensor)  — raw per-step reward; reset default on reset frames
         done (int64 tensor)      — 0=running, 1=terminated, 2=truncated; 0 on reset frames
-        group_id (str)           — env identity string
         episode_index (int)      — episode counter for this parallel env
         reward_episodic (float)  — normalised training signal; 0.0 on reset frames
         q_star (optional)        — float64[action_dim] expert Q-values when configured
@@ -108,12 +108,12 @@ class MouseVectorEnv:
     def __init__(
         self,
         env: gym.vector.VectorEnv,
-        group_ids: list[str],
+        names: list[str],
         *,
         reset_reward: float = 0.0,
     ):
         self._env = env
-        self._group_ids = group_ids
+        self._names = tuple(names)
         self._needs_initial_reset = True
         self._reset_reward = float(reset_reward)
         self._obs_channel, self._obs_dtypes = self._build_obs_schema()
@@ -141,6 +141,14 @@ class MouseVectorEnv:
     @property
     def num_envs(self) -> int:
         return self._env.num_envs
+
+    @property
+    def name(self) -> str:
+        return self._names[0]
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return self._names
 
     @property
     def single_observation_space(self):
@@ -346,7 +354,6 @@ class MouseVectorEnv:
                 "observation": self._obs_for_index(obs, i),
                 "reward": torch.tensor(float(reward_arr[i]), dtype=torch.float32),
                 "done": torch.tensor(int(done_arr[i]), dtype=torch.int64),
-                "group_id": self._group_ids[i],
                 "episode_index": int(episode_index[i]),
                 "reward_episodic": float(xformed_arr[i]),
             }

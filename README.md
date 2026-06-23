@@ -42,7 +42,7 @@ Build an env, sample actions, and keep stepping:
 from mouse_envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
-    group_id="CartPole-v1",
+    id="CartPole-v1",
     seed=0,
     num_envs=4,
     max_episode_steps=500,
@@ -92,7 +92,9 @@ This keeps the rollout stream uniform while still making episode structure expli
 
 ## Gymnasium environments 🌎
 
-Pass any Gymnasium environment id as `group_id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
+Pass any Gymnasium environment id as `id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
+
+Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `#0`, `#1`, and so on. `env.name` returns the first name for single-env use. Step results do not repeat this name on every record.
 
 mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 
@@ -122,14 +124,14 @@ Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Bring your own env (`env_fn`)
 
-Instead of a `group_id` string, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `group_id` is still used as the identity label, and `max_episode_steps` is still required (for reward normalisation); `kwargs`, `render`, and the internal `max_episode_steps` time limit are left to your factory.
+Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `name` if set, otherwise `id`, is used as the base for `env.names`, and `max_episode_steps` is still required (for reward normalisation); `kwargs`, `render`, and the internal `max_episode_steps` time limit are left to your factory.
 
 ```python
 def make_env():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)  # apply any Gymnasium wrappers here
 
-cfg = EnvConfig(group_id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
+cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.

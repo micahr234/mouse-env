@@ -58,7 +58,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
     pendulum_ppo_zip_path: Path,
 ) -> None:
     cfg = EnvConfig(
-        group_id="Pendulum-v1",
+        id="Pendulum-v1",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
@@ -91,7 +91,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
 
 def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
     cfg = EnvConfig(
-        group_id="Procedural-FrozenLake-v1",
+        id="Procedural-FrozenLake-v1",
         seed=3,
         num_envs=1,
         max_episode_steps=50,
@@ -111,7 +111,7 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
 
 def test_metadata_q_star_synthetic_matches_action_dim() -> None:
     cfg = EnvConfig(
-        group_id="SyntheticEnv-v1",
+        id="SyntheticEnv-v1",
         seed=1,
         num_envs=2,
         max_episode_steps=50,
@@ -131,7 +131,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
     cartpole_ppo_zip_path: Path,
 ) -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -187,7 +187,7 @@ def test_hf_q_table_vector_env_integration(
     tabular_qtable_pickle_path: Path,
 ) -> None:
     cfg = EnvConfig(
-        group_id="SyntheticEnv-v1",
+        id="SyntheticEnv-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -215,7 +215,7 @@ def test_hf_q_table_vector_env_integration(
 
 def test_q_star_absent_when_disabled() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,

@@ -64,7 +64,7 @@ def _make_ns_cartpole() -> gym.Env:
 
 def test_non_stationary_cartpole() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-ns",
+        id="CartPole-ns",
         seed=0,
         num_envs=2,
         max_episode_steps=500,

@@ -210,26 +210,18 @@ class XformedRewardWrapper(gym.vector.VectorWrapper):
 
 
 class EnvIdentityWrapper(gym.vector.VectorWrapper):
-    """Inject environment identity and done-status encoding into ``info``; expose convenience attributes."""
+    """Inject done-status encoding into ``info``; expose convenience attributes."""
 
     def __init__(
         self,
         env: gym.vector.VectorEnv,
-        group_id: str,
+        name: str,
         env_seed: int,
         obs_key: str,
-        group_ids: list[str] | None = None,
     ):
         super().__init__(env)
-        if group_ids is not None:
-            if len(group_ids) != env.num_envs:
-                raise ValueError(
-                    f"group_ids has {len(group_ids)} entries but num_envs={env.num_envs}."
-                )
-            self._group_id_arr = np.array(group_ids)
-        else:
-            self._group_id_arr = np.full((env.num_envs,), group_id)
         self._env_idx_arr = np.arange(env.num_envs, dtype=np.int64)
+        self.name = name
         self.env_seed = int(env_seed)
         self.obs_key = obs_key
 
@@ -253,7 +245,6 @@ class EnvIdentityWrapper(gym.vector.VectorWrapper):
         obs, info = self.env.reset(**kwargs)
         info = dict(info)
         info["done"] = np.zeros(self.num_envs, dtype=np.int64)
-        info["group_id"] = self._group_id_arr.copy()
         info["env_idx"] = self._env_idx_arr.copy()
         return obs, info
 
@@ -264,7 +255,6 @@ class EnvIdentityWrapper(gym.vector.VectorWrapper):
         done_int[np.asarray(terminated, dtype=np.bool_)] = 1
         info = dict(info)
         info["done"] = done_int
-        info["group_id"] = self._group_id_arr.copy()
         info["env_idx"] = self._env_idx_arr.copy()
         return obs, reward, terminated, truncated, info
 
@@ -275,7 +265,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
     def __init__(
         self,
         env: gym.vector.VectorEnv,
-        group_id: str,
+        env_id: str,
         q_star_source: dict[str, Any],
         obs_key: str,
     ):
@@ -283,7 +273,7 @@ class QStarWrapper(gym.vector.VectorWrapper):
 
         super().__init__(env)
         self._adapter = build_q_star_source_adapter(
-            env_id=group_id,
+            env_id=env_id,
             q_star_source=q_star_source,
             obs_key=obs_key,
             single_observation_space=env.single_observation_space,
@@ -384,14 +374,14 @@ class ConstructionSeedWrapper(gym.Wrapper):
 
 def build_vector_env_stack(
     env_fns: list,
-    group_id: str,
+    env_id: str,
+    name: str,
     seed: int,
     max_steps_per_episode: int,
     observation_kind: str | None = None,
     reward_scale: float = 1.0,
     reward_shift: float = 0.0,
     q_star_source: dict[str, Any] | None = None,
-    group_ids: list[str] | None = None,
 ) -> gym.vector.VectorEnv:
     """Compose the standard vector-env wrapper stack around a ``SyncVectorEnv``."""
     env: gym.vector.VectorEnv = SyncVectorEnv(
@@ -404,11 +394,9 @@ def build_vector_env_stack(
     resolved_obs_key = resolve_obs_key(env, observation_kind)
     env = TransformReward(env, func=_reward_scale_shift_func(reward_scale, reward_shift))
     env = XformedRewardWrapper(env, max_steps=max_steps_per_episode)
-    env = EnvIdentityWrapper(
-        env, group_id=group_id, env_seed=seed, obs_key=resolved_obs_key, group_ids=group_ids
-    )
+    env = EnvIdentityWrapper(env, name=name, env_seed=seed, obs_key=resolved_obs_key)
     if q_star_source is not None:
         env = QStarWrapper(
-            env, group_id=group_id, q_star_source=q_star_source, obs_key=resolved_obs_key
+            env, env_id=env_id, q_star_source=q_star_source, obs_key=resolved_obs_key
         )
     return env

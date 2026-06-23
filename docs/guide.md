@@ -20,7 +20,7 @@ For local development, clone the repo and run `source scripts/install.sh`.
 from mouse_envs import EnvConfig, make_vector_env
 
 cfg = EnvConfig(
-    group_id="CartPole-v1",
+    id="CartPole-v1",
     seed=0,
     num_envs=4,
     max_episode_steps=500,
@@ -28,34 +28,40 @@ cfg = EnvConfig(
 env = make_vector_env(cfg)
 ```
 
-`make_vector_env` returns a `MouseVectorEnv`. Use `group_id` for any Gymnasium environment id, including custom ids registered by this package such as `Procedural-FrozenLake-v1` and `SyntheticEnv-v1`.
+`make_vector_env` returns a `MouseVectorEnv`. Use `id` for any Gymnasium environment id, including custom ids registered by this package such as `Procedural-FrozenLake-v1` and `SyntheticEnv-v1`. The constructed env exposes indexed names as `env.names`, for example `("CartPole-v1#0", "CartPole-v1#1")`; `env.name` returns the first name for single-env use. Pass optional `name` when the public environment name should differ from the Gymnasium id:
 
-To build the env yourself instead of by id, pass `env_fn` — a zero-arg factory returning a fresh Gymnasium env (mouse-env calls it once per parallel env, so it must return a new instance each time, not a shared one). `group_id` then acts purely as the identity label and `max_episode_steps` is still required for reward normalisation; `kwargs`, `render`, and the time limit become your factory's responsibility. This is the place to do construction and wrapping outside mouse-env (Atari preprocessing, non-stationary NS-Gym envs, and so on).
+```python
+cfg = EnvConfig(id="CartPole-v1", name="train-cartpole", seed=0, num_envs=2, max_episode_steps=500)
+env = make_vector_env(cfg)
+env.names  # ("train-cartpole#0", "train-cartpole#1")
+```
+
+To build the env yourself instead of by id, pass `env_fn` — a zero-arg factory returning a fresh Gymnasium env (mouse-env calls it once per parallel env, so it must return a new instance each time, not a shared one). `name` if set, otherwise `id`, acts as the base for `env.names`, and `max_episode_steps` is still required for reward normalisation; `kwargs`, `render`, and the time limit become your factory's responsibility. This is the place to do construction and wrapping outside mouse-env (Atari preprocessing, non-stationary NS-Gym envs, and so on).
 
 ```python
 def make_env():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)
 
-cfg = EnvConfig(group_id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
+cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
 ```
 
 Required fields:
 
 | Field | Purpose |
 |-------|---------|
-| `group_id` | Gymnasium env id or a custom id registered by this package |
+| `id` | Gymnasium env id or a custom id registered by this package |
 | `seed` | Base seed for parallel streams |
 | `num_envs` | Number of environments stepped in parallel |
 | `max_episode_steps` | Episode length budget (also used for reward normalisation) |
 
-Everything else on `EnvConfig` is optional (reward shaping, partial observations, custom env wrappers, observation-channel routing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
+Everything else on `EnvConfig` is optional (`name` overrides the base for `env.name` / `env.names`; other knobs cover reward shaping, partial observations, custom env wrappers, observation-channel routing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
 
 Expert Q-values are opt-in. Pass `q_star_source` directly when a rollout should include `results[i]["q_star"]`:
 
 ```python
 cfg = EnvConfig(
-    group_id="CartPole-v1",
+    id="CartPole-v1",
     seed=0,
     num_envs=4,
     max_episode_steps=500,
@@ -86,11 +92,12 @@ Every `step()` returns the same two-part shape:
 ```python
 results, metrics = env.step(actions)
 # actions[i]["action"]: dict — discrete or continuous (input to step)
-# results[i]:  all per-step fields — observation, reward, done, time, group_id, episode_index, reward_episodic, optional q_star/ns_params
+# env.names[i]: environment name for vector index i
+# results[i]:  all per-step fields — observation, reward, done, time, episode_index, reward_episodic, optional q_star/ns_params
 # metrics[i]:  evaluation stats — cum reward, length
 ```
 
-**`results`** is the rollout stream. Each `results[i]` is a dict containing both the sequence-model inputs (observation, reward, done, time) and training/analysis context (group_id, episode_index, reward_episodic, and optionally q_star and ns_params). **`metrics`** sits alongside it at the same env index and summarizes episode outcomes for evaluation and logging.
+**`env.names`** holds the environment names by vector index. These start with `EnvConfig.name` when provided, otherwise `EnvConfig.id`, and append `#0`, `#1`, and so on without repeating that name in every step record. **`results`** is the rollout stream. Each `results[i]` is a dict containing both the sequence-model inputs (observation, reward, done, time) and training/analysis context (episode_index, reward_episodic, and optionally q_star and ns_params). **`metrics`** sits alongside it at the same env index and summarizes episode outcomes for evaluation and logging.
 
 When a sub-environment finishes, it auto-resets on the next step. That autoreset frame looks like the initial reset frame: it uses the configured `reset_reward` and always has `done == 0`. The actual episode boundary is the step where `done` is non-zero.
 
@@ -98,7 +105,7 @@ Configure `reset_reward` on `EnvConfig` when the initial/reset token should carr
 
 ```python
 cfg = EnvConfig(
-    group_id="CartPole-v1",
+    id="CartPole-v1",
     seed=0,
     num_envs=4,
     max_episode_steps=500,
@@ -150,7 +157,6 @@ Pick the key by action space: `Discrete`/`MultiDiscrete` spaces use `"discrete"`
     },
     "reward": torch.tensor(float, dtype=torch.float32),
     "done": torch.tensor(int, dtype=torch.int64),
-    "group_id": str,
     "episode_index": int,
     "reward_episodic": float,
     # optional:
@@ -169,7 +175,6 @@ Pick the key by action space: `Discrete`/`MultiDiscrete` spaces use `"discrete"`
 | `observation` | dict of tensors | Any combination of `discrete`, `continuous`, and/or `image` keys. |
 | `reward` | float32 tensor | Raw environment reward. Uses `reset_reward` on reset frames. |
 | `done` | int64 tensor | `0` running · `1` terminated · `2` truncated. Reset frames always use `0`. |
-| `group_id` | str | Env identity string (e.g. `"CartPole-v1#0"`). |
 | `episode_index` | int | Episode counter for this parallel env. |
 | `reward_episodic` | float | Normalised training signal; `0.0` on reset frames. |
 | `q_star` | float64 array | Expert Q-values when configured (optional). |
@@ -202,7 +207,7 @@ Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) 
 
 mouse-env has no per-environment integration code. Two general `EnvConfig` knobs cover environment-specific needs:
 
-- **`env_fn`** — build (and wrap) the env yourself in a zero-arg factory, instead of by `group_id`. mouse-env calls it once per parallel env, so return a fresh instance each time. This is where you apply any Gymnasium wrapper (preprocessing, observation transforms, time limits, and so on). It's also how you use envs such as Atari (`gymnasium.wrappers.AtariPreprocessing`) or non-stationary NS-Gym envs — construct and wrap them in the factory; see the examples below.
+- **`env_fn`** — build (and wrap) the env yourself in a zero-arg factory, instead of by `id`. mouse-env calls it once per parallel env, so return a fresh instance each time. This is where you apply any Gymnasium wrapper (preprocessing, observation transforms, time limits, and so on). It's also how you use envs such as Atari (`gymnasium.wrappers.AtariPreprocessing`) or non-stationary NS-Gym envs — construct and wrap them in the factory; see the examples below.
 - **`observation_kind`** — force the observation channel: `"continuous"`, `"discrete"`, or `"image"`. When `None` (default), mouse-env auto-detects from the observation space. Auto-detection cannot recognise image spaces (an image is a `uint8` `Box`, which otherwise looks discrete), so image envs must set `observation_kind="image"`.
 
 Envs that need an extra package install it via an optional extra: `pip install 'mouse-env[atari]'` (`ale_py` + `opencv-python`) or `pip install 'mouse-env[non-stationary]'` (`ns_gym`). To pull every optional env in one go, use `pip install 'mouse-env[all]'`.

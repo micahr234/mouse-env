@@ -13,10 +13,11 @@ OBSERVATION_KINDS = ("continuous", "discrete", "image")
 class EnvConfig:
     """Configuration for building a vector environment via :func:`mouse_envs.make_vector_env`."""
 
-    group_id: str
+    id: str
     seed: int
     num_envs: int
     max_episode_steps: int | None
+    name: str | None = None
     kwargs: dict | None = None
     render: bool = False
     q_star_source: dict[str, Any] | None = None
@@ -25,5 +26,4 @@ class EnvConfig:
     observation_indices: list[int] | None = None
     reward_scale: float = 1.0
     reward_shift: float = 0.0
-    group_ids: list[str] | None = None
     reset_reward: float = 0.0

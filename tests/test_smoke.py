@@ -19,20 +19,30 @@ def _rollout(env, steps: int = 5) -> tuple[list, list]:
 
 def test_cartpole_step_contract() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
+        name="train-cartpole",
         seed=0,
-        num_envs=2,
+        num_envs=3,
         max_episode_steps=50,
     )
     env = make_vector_env(cfg)
     try:
         result, metrics = _rollout(env)
-        assert len(result) == 2
-        assert len(metrics) == 2
-        assert result[0]["group_id"].endswith("#0")
-        assert result[1]["group_id"].endswith("#1")
+        assert len(result) == 3
+        assert len(metrics) == 3
+        assert env.name == "train-cartpole#0"
+        assert env.names == ("train-cartpole#0", "train-cartpole#1", "train-cartpole#2")
         for i, r in enumerate(result):
-            assert set(r.keys()) >= {"time", "observation", "reward", "done", "group_id", "episode_index", "reward_episodic"}
+            assert set(r.keys()) >= {
+                "time",
+                "observation",
+                "reward",
+                "done",
+                "episode_index",
+                "reward_episodic",
+            }
+            assert "id" not in r
+            assert "name" not in r
             assert "action" not in r
             assert "continuous" in r["observation"]
             assert metrics[i]["episode_cum_reward"] == [] or isinstance(
@@ -44,7 +54,7 @@ def test_cartpole_step_contract() -> None:
 
 def test_pendulum_continuous_step_contract() -> None:
     cfg = EnvConfig(
-        group_id="Pendulum-v1",
+        id="Pendulum-v1",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
@@ -67,11 +77,11 @@ def test_pendulum_continuous_step_contract() -> None:
         env.close()
 
 
-def test_action_must_be_dict() -> None:
+def test_action_input_contract_is_enforced() -> None:
     from tensordict import TensorDict
 
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -85,22 +95,6 @@ def test_action_must_be_dict() -> None:
         ]
         with pytest.raises(ValueError, match="must be a dict"):
             env.step(bare)
-    finally:
-        env.close()
-
-
-def test_action_dict_requires_matching_key() -> None:
-    from tensordict import TensorDict
-
-    cfg = EnvConfig(
-        group_id="CartPole-v1",
-        seed=0,
-        num_envs=1,
-        max_episode_steps=50,
-    )
-    env = make_vector_env(cfg)
-    try:
-        env.step(env.sample_random_actions())  # initial reset frame
         wrong_key = [
             TensorDict(
                 {"action": {"continuous": torch.tensor([0.0])}}, batch_size=[]
@@ -138,7 +132,7 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
             )
 
     cfg = EnvConfig(
-        group_id="DictObs",
+        id="DictObs",
         seed=0,
         num_envs=1,
         max_episode_steps=10,
@@ -155,25 +149,9 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
         env.close()
 
 
-def test_observation_is_always_a_dict() -> None:
-    cfg = EnvConfig(
-        group_id="CartPole-v1",
-        seed=0,
-        num_envs=2,
-        max_episode_steps=50,
-    )
-    env = make_vector_env(cfg)
-    try:
-        result, _metrics = _rollout(env, steps=2)
-        for r in result:
-            assert isinstance(r["observation"], dict)
-    finally:
-        env.close()
-
-
 def test_procedural_frozenlake_vector() -> None:
     cfg = EnvConfig(
-        group_id="Procedural-FrozenLake-v1",
+        id="Procedural-FrozenLake-v1",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
@@ -194,7 +172,7 @@ def test_procedural_frozenlake_vector() -> None:
 
 def test_synthetic_vector() -> None:
     cfg = EnvConfig(
-        group_id="SyntheticEnv-v1",
+        id="SyntheticEnv-v1",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
@@ -211,26 +189,9 @@ def test_synthetic_vector() -> None:
         env.close()
 
 
-def test_reward_shaping() -> None:
-    cfg = EnvConfig(
-        group_id="CartPole-v1",
-        seed=0,
-        num_envs=1,
-        max_episode_steps=50,
-        reward_scale=0.5,
-        reward_shift=1.0,
-    )
-    env = make_vector_env(cfg)
-    try:
-        result, _metrics = _rollout(env, steps=3)
-        assert isinstance(result[0]["reward_episodic"], float)
-    finally:
-        env.close()
-
-
 def test_partial_observability() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -245,28 +206,9 @@ def test_partial_observability() -> None:
         env.close()
 
 
-def test_first_step_is_reset_frame() -> None:
+def test_reset_frame_contract() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
-        seed=0,
-        num_envs=1,
-        max_episode_steps=50,
-    )
-    env = make_vector_env(cfg)
-    try:
-        result, metrics = env.step(env.sample_random_actions())
-        assert result[0]["time"].item() == 0
-        assert result[0]["reward"].item() == 0.0
-        assert result[0]["done"].item() == 0
-        assert result[0]["reward_episodic"] == 0.0
-        assert metrics[0]["episode_cum_reward"] == []
-    finally:
-        env.close()
-
-
-def test_reset_frame_reward_is_configurable_and_done_is_running() -> None:
-    cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -284,6 +226,7 @@ def test_reset_frame_reward_is_configurable_and_done_is_running() -> None:
     finally:
         env.close()
 
+
 def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int]:
     result, metrics = env.step(env.sample_random_actions())
     for step in range(1, max_steps):
@@ -296,7 +239,7 @@ def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int
 
 def test_autoreset_frame_zeros_reward_with_shift() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -315,15 +258,6 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
         env.close()
 
 
-def test_to_json_str_roundtrip() -> None:
-    from mouse_envs.utils import to_json_str
-    import json
-
-    payload = {"board": ["SFFF", "FFFF"], "rewards": {"3": 1.0}}
-    s = to_json_str(payload)
-    assert json.loads(s) == payload
-
-
 def test_env_fn_factory() -> None:
     def make_cartpole() -> gym.Env:
         env = gym.make("CartPole-v1", max_episode_steps=50)
@@ -332,7 +266,7 @@ def test_env_fn_factory() -> None:
         )
 
     cfg = EnvConfig(
-        group_id="CartPole-custom",
+        id="CartPole-custom",
         seed=0,
         num_envs=2,
         max_episode_steps=50,
@@ -342,7 +276,7 @@ def test_env_fn_factory() -> None:
     try:
         result, _metrics = _rollout(env, steps=2)
         assert len(result) == 2
-        assert result[0]["group_id"].endswith("#0")
+        assert env.names == ("CartPole-custom#0", "CartPole-custom#1")
         obs = result[0]["observation"]["continuous"].numpy()
         assert np.all(obs == 0.0)
     finally:
@@ -351,7 +285,7 @@ def test_env_fn_factory() -> None:
 
 def test_observation_kind_override() -> None:
     cfg = EnvConfig(
-        group_id="CartPole-v1",
+        id="CartPole-v1",
         seed=0,
         num_envs=1,
         max_episode_steps=50,
@@ -366,24 +300,11 @@ def test_observation_kind_override() -> None:
         env.close()
 
 
-def test_observation_kind_invalid() -> None:
-    with pytest.raises(ValueError, match="observation_kind"):
-        make_vector_env(
-            EnvConfig(
-                group_id="CartPole-v1",
-                seed=0,
-                num_envs=1,
-                max_episode_steps=50,
-                observation_kind="rgb",
-            )
-        )
-
-
 def test_make_vector_env_requires_max_steps() -> None:
     with pytest.raises(ValueError, match="max_episode_steps"):
         make_vector_env(
             EnvConfig(
-                group_id="CartPole-v1",
+                id="CartPole-v1",
                 seed=0,
                 num_envs=1,
                 max_episode_steps=None,

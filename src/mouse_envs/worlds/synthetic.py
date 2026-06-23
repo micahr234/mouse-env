@@ -439,7 +439,7 @@ def ensure_synthetic_env_registered() -> None:
     """Register ``SyntheticEnv-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
-    by :func:`~mouse_envs.make_vector_env` when ``group_id`` matches
+    by :func:`~mouse_envs.make_vector_env` when ``id`` matches
     :data:`SYNTHETIC_ENV_ID`.
     """
     if SYNTHETIC_ENV_ID in registry:

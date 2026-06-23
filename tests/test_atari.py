@@ -32,7 +32,7 @@ def _pong_factory(max_episode_steps: int, *, preprocess_kwargs: dict | None):
 
 def test_atari_vector_preprocessing() -> None:
     cfg = EnvConfig(
-        group_id="ALE/Pong-v5",
+        id="ALE/Pong-v5",
         seed=0,
         num_envs=2,
         max_episode_steps=500,
@@ -47,7 +47,7 @@ def test_atari_vector_preprocessing() -> None:
         result, metrics = env.step(env.sample_random_actions())
         assert len(result) == 2
         assert len(metrics) == 2
-        assert "group_id" in result[0]
+        assert "id" in result[0]
 
         batch = np.stack([r["observation"]["image"].numpy() for r in result])
         assert batch.shape == (2, 84, 84)
@@ -63,7 +63,7 @@ def test_atari_vector_preprocessing() -> None:
 
 def test_atari_multi_step_rollout() -> None:
     cfg = EnvConfig(
-        group_id="ALE/Pong-v5",
+        id="ALE/Pong-v5",
         seed=1,
         num_envs=1,
         max_episode_steps=500,
@@ -83,7 +83,7 @@ def test_atari_multi_step_rollout() -> None:
 
 def test_atari_discrete_action_sampling() -> None:
     cfg = EnvConfig(
-        group_id="ALE/Pong-v5",
+        id="ALE/Pong-v5",
         seed=0,
         num_envs=1,
         max_episode_steps=100,
@@ -101,7 +101,7 @@ def test_atari_discrete_action_sampling() -> None:
 
 def test_atari_without_preprocessing() -> None:
     cfg = EnvConfig(
-        group_id="ALE/Pong-v5",
+        id="ALE/Pong-v5",
         seed=0,
         num_envs=1,
         max_episode_steps=100,
