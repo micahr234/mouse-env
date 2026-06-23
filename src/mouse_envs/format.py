@@ -201,6 +201,19 @@ class MouseVectorEnv:
             obs, reward, _terminated, _truncated, info = self._env.step(raw_actions)
             return self._build_records(obs, info, reward=reward, is_reset=False)
 
+    def render(self) -> list:
+        """Return rendered frames from all sub-envs.
+
+        Requires the env to be created with ``render_mode="rgb_array"`` (pass via
+        ``EnvConfig.kwargs``). Returns a list of one numpy array per sub-env.
+        """
+        frames = self._env.render()
+        if frames is None:
+            return []
+        if isinstance(frames, (list, tuple)):
+            return list(frames)
+        return [frames]
+
     def close(self) -> None:
         self._env.close()
 
