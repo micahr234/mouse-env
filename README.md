@@ -71,7 +71,7 @@ Each call returns two objects:
 * **`results`** — model-visible training data, including observations (`discrete`, `continuous`, and/or `image` tensor channels), rewards, done flags, time, episode metadata, optional `q_star` target expert action-values, and environment-specific fields
 * **`metrics`** — logging data, such as true episodic return and episode length, emitted when episodes end
 
-`actions` follow the same typed-dictionary structure as observations.
+`actions` are plain dictionaries with the same nested action-channel shape as observations.
 
 Episode boundaries are represented by integer-coded `done` values:
 

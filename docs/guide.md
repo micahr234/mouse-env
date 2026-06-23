@@ -117,27 +117,27 @@ cfg = EnvConfig(
 
 ## Input: actions
 
-Pass a `list[TensorDict]` of length `num_envs`. Each **`action` must be a dict** — use `"discrete"` or `"continuous"` to match the environment's action space. A bare tensor (e.g. `{"action": torch.tensor([2])}`) is rejected; the typed-dict form is required, mirroring the dict observation output:
+Pass a `list[dict]` of length `num_envs`. Each **`action` must be a dict** — use `"discrete"` or `"continuous"` to match the environment's action space. A bare tensor (e.g. `{"action": torch.tensor(2)}`) is rejected; the nested dict form mirrors the dict observation output:
 
 ```python
-from tensordict import TensorDict
 import torch
 
 # Discrete env (e.g. Procedural Frozen Lake, Atari, CartPole):
 actions = [
-    TensorDict({"action": {"discrete": torch.tensor([2])}}, batch_size=[])
+    {"action": {"discrete": torch.tensor(2)}}
     for _ in range(env.num_envs)
 ]
 
 # Continuous env (e.g. Pendulum-v1, LunarLanderContinuous-v3):
-# TensorDict({"action": {"continuous": torch.tensor([0.5])}}, batch_size=[])
+# {"action": {"continuous": torch.tensor(0.5)}}
 
 results, metrics = env.step(actions)
 ```
 
 Pick the key by action space: `Discrete`/`MultiDiscrete` spaces use `"discrete"`
 (int64), and `Box` (continuous) spaces use `"continuous"` (float32). The
-`"continuous"` tensor carries one value per action dimension (`env.action_dim`).
+`"continuous"` tensor carries one value per action dimension (`env.action_dim`);
+single-value actions are scalar tensors.
 
 `env.sample_random_actions()` generates a valid action list with the same dict layout. On the first `step()` after construction, actions are ignored.
 

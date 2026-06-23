@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Required, TypedDict, cast
 
 import gymnasium as gym
 import numpy as np
 import torch
-from tensordict import TensorDict, TensorDictBase
 
 ACTION_KEY_DISCRETE = "discrete"
 ACTION_KEY_CONTINUOUS = "continuous"
@@ -92,7 +90,7 @@ class MouseVectorEnv:
 
     Both sides of the contract are dicts: each ``result[i]["observation"]`` is a
     dict keyed by channel (``"discrete"``, ``"continuous"``, and/or ``"image"``),
-    and each action input must be a dict too. Pass ``list[TensorDict]`` where every
+    and each action input must be a dict too. Pass ``list[dict]`` where every
     ``actions[i]["action"]`` is a dict with a ``"discrete"`` or ``"continuous"``
     tensor; a bare tensor is rejected.
 
@@ -168,21 +166,26 @@ class MouseVectorEnv:
         """Forward action_dim from the inner EnvIdentityWrapper if available."""
         return getattr(self._env, "action_dim", 0)
 
-    def sample_random_actions(self) -> list[TensorDict]:
-        """Sample random actions as ``list[TensorDict]`` with ``action`` dict keys."""
+    def _action_tensor(self, value: Any, *, dtype: torch.dtype) -> torch.Tensor:
+        arr = np.asarray(value).flatten()
+        if arr.size == 1:
+            return torch.tensor(arr.item(), dtype=dtype)
+        return torch.tensor(arr, dtype=dtype)
+
+    def sample_random_actions(self) -> list[dict]:
+        """Sample random actions as ``list[dict]`` with ``action`` dict keys."""
         raw = cast(Any, self._env).sample_random_actions()
         space = self._env.single_action_space
-        tds: list[TensorDict] = []
+        actions: list[dict] = []
         for i in range(self.num_envs):
-            arr = np.asarray(raw[i]).flatten()
             if isinstance(space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete)):
-                action = {"discrete": torch.tensor(arr, dtype=torch.int64)}
+                action = {"discrete": self._action_tensor(raw[i], dtype=torch.int64)}
             else:
-                action = {"continuous": torch.tensor(arr, dtype=torch.float32)}
-            tds.append(TensorDict({"action": action}, batch_size=[]))
-        return tds
+                action = {"continuous": self._action_tensor(raw[i], dtype=torch.float32)}
+            actions.append({"action": action})
+        return actions
 
-    def step(self, actions: list[TensorDict]) -> tuple[list[dict], list[dict]]:
+    def step(self, actions: list[dict]) -> tuple[list[dict], list[dict]]:
         """Step all envs; return ``(result, metrics)``.
 
         On the first call after construction, performs an internal reset and returns
@@ -201,19 +204,24 @@ class MouseVectorEnv:
     def close(self) -> None:
         self._env.close()
 
-    def _action_dict(self, td: TensorDict, index: int) -> Mapping[str, Any]:
+    def _action_dict(self, action_record: dict[str, Any], index: int) -> dict[str, Any]:
         """Return the action dict for env ``index``, enforcing the dict contract.
 
         Each ``actions[i]["action"]`` must be a dict keyed by action type
         (``"discrete"`` or ``"continuous"``); a bare tensor is rejected.
         """
+        if not isinstance(action_record, dict):
+            raise ValueError(
+                f"actions[{index}] must be a dict with an 'action' entry, "
+                f"got {type(action_record).__name__}."
+            )
         try:
-            entry = cast(Any, td)["action"]
+            entry = action_record["action"]
         except KeyError as exc:
             raise ValueError(
                 f"actions[{index}] is missing the required 'action' entry."
             ) from exc
-        if not isinstance(entry, (Mapping, TensorDictBase)):
+        if not isinstance(entry, dict):
             raise ValueError(
                 f"actions[{index}]['action'] must be a dict keyed by action type "
                 f"('{ACTION_KEY_DISCRETE}' or '{ACTION_KEY_CONTINUOUS}'), "
@@ -222,18 +230,32 @@ class MouseVectorEnv:
         return entry
 
     def _require_action_key(
-        self, entry: Mapping[str, Any], key: str, index: int
+        self, entry: dict[str, Any], key: str, index: int
     ) -> np.ndarray:
         if key not in entry:
             raise ValueError(
                 f"actions[{index}]['action'] must contain the '{key}' key for this "
                 f"action space; got keys {sorted(entry.keys())}."
             )
-        return cast(Any, entry)[key].numpy()
+        value = cast(Any, entry)[key]
+        if hasattr(value, "numpy"):
+            return value.numpy()
+        return np.asarray(value)
 
-    def _unpack_actions(self, actions: list[TensorDict]) -> np.ndarray:
+    def _unpack_actions(self, actions: list[dict]) -> np.ndarray:
         space = self._env.single_action_space
-        if isinstance(space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete)):
+        if isinstance(space, gym.spaces.Discrete):
+            discrete_actions = [
+                self._require_action_key(
+                    self._action_dict(td, i), ACTION_KEY_DISCRETE, i
+                )
+                for i, td in enumerate(actions)
+            ]
+            raw = np.asarray(
+                [np.asarray(a).reshape(-1)[0] for a in discrete_actions],
+                dtype=np.int64,
+            )
+        elif isinstance(space, gym.spaces.MultiDiscrete):
             discrete_actions = [
                 self._require_action_key(
                     self._action_dict(td, i), ACTION_KEY_DISCRETE, i
@@ -241,8 +263,8 @@ class MouseVectorEnv:
                 for i, td in enumerate(actions)
             ]
             raw = np.stack(
-                discrete_actions
-            ).squeeze(-1).astype(np.int64)
+                [np.asarray(a).reshape(-1) for a in discrete_actions]
+            ).astype(np.int64)
         else:
             continuous_actions = [
                 self._require_action_key(
@@ -251,8 +273,9 @@ class MouseVectorEnv:
                 for i, td in enumerate(actions)
             ]
             raw = np.stack(
-                continuous_actions
+                [np.asarray(a).reshape(-1) for a in continuous_actions]
             ).astype(np.float32)
+            raw = raw.reshape((self.num_envs, *space.shape))
         return raw
 
     def _obs_for_index(self, obs: Any, i: int) -> dict[str, torch.Tensor]:

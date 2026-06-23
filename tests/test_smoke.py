@@ -32,6 +32,8 @@ def test_cartpole_step_contract() -> None:
         assert len(metrics) == 3
         assert env.name == "train-cartpole#0"
         assert env.names == ("train-cartpole#0", "train-cartpole#1", "train-cartpole#2")
+        sampled_action = env.sample_random_actions()[0]["action"]["discrete"]
+        assert sampled_action.ndim == 0
         for i, r in enumerate(result):
             assert set(r.keys()) >= {
                 "time",
@@ -67,7 +69,7 @@ def test_pendulum_continuous_step_contract() -> None:
         assert "continuous" in action
         assert "discrete" not in action
         assert action["continuous"].dtype == torch.float32
-        assert action["continuous"].shape == (1,)
+        assert action["continuous"].ndim == 0
         result, metrics = _rollout(env)
         assert len(result) == 2
         for r in result:
@@ -78,8 +80,6 @@ def test_pendulum_continuous_step_contract() -> None:
 
 
 def test_action_input_contract_is_enforced() -> None:
-    from tensordict import TensorDict
-
     cfg = EnvConfig(
         id="CartPole-v1",
         seed=0,
@@ -89,18 +89,10 @@ def test_action_input_contract_is_enforced() -> None:
     env = make_vector_env(cfg)
     try:
         env.step(env.sample_random_actions())  # initial reset frame
-        bare = [
-            TensorDict({"action": torch.tensor([0])}, batch_size=[])
-            for _ in range(env.num_envs)
-        ]
+        bare = [{"action": torch.tensor(0)} for _ in range(env.num_envs)]
         with pytest.raises(ValueError, match="must be a dict"):
             env.step(bare)
-        wrong_key = [
-            TensorDict(
-                {"action": {"continuous": torch.tensor([0.0])}}, batch_size=[]
-            )
-            for _ in range(env.num_envs)
-        ]
+        wrong_key = [{"action": {"continuous": torch.tensor(0.0)}} for _ in range(env.num_envs)]
         with pytest.raises(ValueError, match="discrete"):
             env.step(wrong_key)
     finally:
