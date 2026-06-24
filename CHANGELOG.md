@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `episodes_per_task` now defaults to `0` (unlimited) — the task boundary (done codes 3/4) never fires automatically. Passing any positive integer restores the previous fixed-count behaviour.
 - `MetricsTracker` class attached to `MouseEnv` as `env.tracker`; accumulates per-slot `episode_cum_rewards` and `episode_lengths` automatically on every `step()` call and can be cleared with `env.tracker.clear()`.
 - All Gymnasium `info` dict keys are now forwarded verbatim as `info_<key>` in every step output. For example, `info["env_q_star"]` appears as `outputs[i]["info_env_q_star"]`, `info["map"]` as `outputs[i]["info_map"]`, and `info["ns_params"]` as `outputs[i]["info_ns_params"]`. No env-specific filtering is applied.
 

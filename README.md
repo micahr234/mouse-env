@@ -100,7 +100,7 @@ Boundaries are represented by integer-coded `done` values:
 * `3` = episode terminated naturally, and this was the last episode in the task
 * `4` = episode truncated, and this was the last episode in the task
 
-Codes 1 and 2 indicate how an episode ended. Codes 3 and 4 carry the same episode-end meaning but additionally mark a task boundary. The RL algorithm bootstraps at codes 3 or 4 and treats codes 1 and 2 as interior dynamics — value keeps propagating forward through those episode resets. `episodes_per_task` in `EnvConfig` sets how many episodes make up one task.
+Codes 1 and 2 indicate how an episode ended. Codes 3 and 4 carry the same episode-end meaning but additionally mark a task boundary. The RL algorithm bootstraps at codes 3 or 4 and treats codes 1 and 2 as interior dynamics — value keeps propagating forward through those episode resets. `episodes_per_task` in `EnvConfig` sets how many episodes make up one task. Defaults to `0` (unlimited) — the task boundary never fires automatically.
 
 Reset frames are ordinary `outputs` records with:
 

@@ -18,7 +18,9 @@ class EnvConfig:
             ``name`` is not set.
         seed: RNG seed applied to the env on construction.
         num_envs: Number of parallel env instances (slots).
-        episodes_per_task: Number of episodes before the task terminates.
+        episodes_per_task: Number of episodes before the task terminates. Defaults to
+            ``0`` (unlimited) — the task boundary (done codes 3/4) never fires
+            automatically.
         name: Optional display name; overrides ``id`` for slot naming.
         kwargs: Extra keyword arguments forwarded to ``gymnasium.make``.
         render: Enable render mode (``"human"``).
@@ -64,7 +66,7 @@ class EnvConfig:
     id: str
     seed: int
     num_envs: int
-    episodes_per_task: int
+    episodes_per_task: int = 0
     name: str | None = None
     kwargs: dict | None = None
     render: bool = False

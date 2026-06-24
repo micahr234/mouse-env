@@ -178,7 +178,7 @@ class _Slot:
         self._task_done_pending = False
         self._episode_time = 0
         self._episode_index = 0
-        self._task_episode_count = 0  # episodes completed in current task (0..episodes_per_task-1)
+        self._task_episode_count = 0  # episodes completed in current task
         self._task_index = 0
         self._episode_cum_reward = 0.0
 
@@ -370,8 +370,11 @@ class _Slot:
 
         self._episode_time += 1
 
-        # Determine done code — codes 3/4 fire when this episode is the last in the task
-        task_done = (self._task_episode_count + 1 == self._episodes_per_task)
+        # Determine done code — codes 3/4 fire when this episode is the last in the task.
+        # episodes_per_task == 0 means unlimited: task boundary never fires automatically.
+        task_done = self._episodes_per_task > 0 and (
+            self._task_episode_count + 1 == self._episodes_per_task
+        )
         if terminated:
             done = DONE_TASK_TERMINATED if task_done else DONE_EPISODE_TERMINATED
         elif truncated:
