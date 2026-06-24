@@ -72,11 +72,11 @@ def test_non_stationary_cartpole() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        result, _metrics = env.step(env.sample_random_actions())
+        outputs, _metrics = env.step(env.sample_random_inputs())
         for _ in range(3):
-            result, _metrics = env.step(env.sample_random_actions())
-        assert "ns_params" in result[0]
-        assert "length" in result[0]["ns_params"]
-        assert "continuous" in result[0]["observation"]
+            outputs, _metrics = env.step(env.sample_random_inputs())
+        assert "ns_params" in outputs[0]
+        assert "length" in outputs[0]["ns_params"]
+        assert "observation" in outputs[0]
     finally:
         env.close()

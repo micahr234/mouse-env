@@ -19,10 +19,10 @@ from mouse_envs.experts.action_star import (
 
 
 def _rollout(env, steps: int = 3):
-    result, metrics = env.step(env.sample_random_actions())
+    outputs, metrics = env.step(env.sample_random_inputs())
     for _ in range(steps - 1):
-        result, metrics = env.step(env.sample_random_actions())
-    return result, metrics
+        outputs, metrics = env.step(env.sample_random_inputs())
+    return outputs, metrics
 
 
 def test_normalize_q_star_source_canonical_providers() -> None:

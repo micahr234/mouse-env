@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Required, TypedDict, cast
 
 import gymnasium as gym
 import numpy as np
 import torch
 
-ACTION_KEY_DISCRETE = "discrete"
-ACTION_KEY_CONTINUOUS = "continuous"
-
-OBS_KEY_DISCRETE = "discrete"
-OBS_KEY_CONTINUOUS = "continuous"
-OBS_KEY_IMAGE = "image"
+ACTION_KEY = "action"
+OBS_KEY = "observation"
 
 TIME_KEY = "time"
 
@@ -36,14 +33,64 @@ def _torch_dtype_for_space(space: gym.Space) -> torch.dtype:
     return torch.int64
 
 
-class RolloutResult(TypedDict, total=False):
-    """All per-env fields for one step (single-env view, ``result[i]``).
+@dataclass
+class FieldSpec:
+    """Describes one field in an output or input dict.
+
+    ``dtype`` is the Python/torch type of the value (e.g. ``torch.float32``,
+    ``torch.int64``, ``int``, ``float``, ``np.float64``). ``shape`` is the tensor
+    shape as a tuple; ``()`` for scalars and plain Python primitives.
+    """
+
+    dtype: torch.dtype | type
+    shape: tuple[int, ...]
+
+
+@dataclass
+class OutputSpec:
+    """Mirrors the output dict: one attribute per key in ``outputs[i]``.
+
+    ``observation`` is a single :class:`FieldSpec` for standard observation spaces, or
+    a ``dict[str, FieldSpec]`` for ``gym.spaces.Dict`` observation spaces (where each
+    subspace key appears directly on the output dict rather than under an
+    ``"observation"`` key).
+
+    Optional fields (``q_star``, ``ns_params``) are ``None`` when not configured.
+    """
+
+    time: FieldSpec
+    observation: FieldSpec | dict[str, FieldSpec]
+    reward: FieldSpec
+    done: FieldSpec
+    episode_index: FieldSpec
+    reward_episodic: FieldSpec
+    q_star: FieldSpec | None
+    ns_params: FieldSpec | None
+
+
+@dataclass
+class InputSpec:
+    """Mirrors the input dict: one attribute per key in ``inputs[i]``.
+
+    ``action`` describes the single ``"action"`` tensor. Its ``dtype`` signals the
+    action kind: ``torch.int64`` for discrete spaces, ``torch.float32`` for
+    continuous (``Box``) spaces.
+    """
+
+    action: FieldSpec
+
+
+class StepOutput(TypedDict, total=False):
+    """All per-env fields for one step (single-env view, ``outputs[i]``).
 
     Tensor fields are ``torch.Tensor``; other fields are plain Python types.
+    The ``observation`` field is a flat tensor (not a nested dict). For
+    ``gym.spaces.Dict`` observation spaces, the subspace keys appear directly on the
+    output dict instead.
     """
 
     time: Required[torch.Tensor]
-    observation: Required[dict[str, Any]]
+    observation: torch.Tensor
     reward: Required[torch.Tensor]
     done: Required[torch.Tensor]
     episode_index: Required[int]
@@ -60,41 +107,44 @@ class RolloutMetrics(TypedDict):
 
 
 class MouseVectorEnv:
-    """Wraps a Gymnasium vector env and returns (result, metrics).
+    """Wraps a Gymnasium vector env and returns (outputs, metrics).
 
     ``names`` identifies the sub-envs by vector index. ``name`` returns the first
-    name, which is convenient for ``num_envs == 1``. ``result`` is a list of length
-    ``num_envs``. Each ``result[i]`` is a dict containing the full per-step record
+    name, which is convenient for ``num_envs == 1``. ``outputs`` is a list of length
+    ``num_envs``. Each ``outputs[i]`` is a dict containing the full per-step record
     for environment ``i``.
 
     Call ``step()`` only — there is no public ``reset()``. The first ``step()`` after
     construction performs an internal reset and returns initial observations with the
-    configured reset-frame ``reward`` and ``done == 0``; actions passed on that call
+    configured reset-frame ``reward`` and ``done == 0``; inputs passed on that call
     are ignored.
-    Subsequent ``step()`` calls apply actions normally. Finished sub-envs are
+    Subsequent ``step()`` calls apply inputs normally. Finished sub-envs are
     auto-reset by the inner ``SyncVectorEnv`` (``AutoresetMode.NEXT_STEP``) on the
     next step; that autoreset frame uses the configured reset reward and ``done == 0``,
     like the initial reset. Episode boundaries appear as non-zero ``done`` on the
     terminal transition.
 
-    Every ``result[i]`` contains:
-        time (int64 tensor)      — step index within the episode (0-based)
-        observation (dict)       — tensors: "discrete", "continuous", and/or "image",
-                                   each keeping its native shape (images stay 2-D/3-D)
-        reward (float32 tensor)  — raw per-step reward; reset default on reset frames
-        done (int64 tensor)      — 0=running, 1=terminated, 2=truncated; 0 on reset frames
-        episode_index (int)      — episode counter for this parallel env
-        reward_episodic (float)  — normalised training signal; 0.0 on reset frames
-        q_star (optional)        — float64[action_dim] expert Q-values when configured
-        ns_params (optional)     — surfaced when an env wrapper sets info["ns_params"]
+    Every ``outputs[i]`` contains:
+        time (int64 tensor)       — step index within the episode (0-based)
+        observation (tensor)      — the observation tensor; dtype and shape described
+                                    by ``env.output_spec.observation``; absent for
+                                    ``Dict`` observation spaces (subspace keys appear
+                                    directly on the output dict instead)
+        reward (float32 tensor)   — raw per-step reward; reset default on reset frames
+        done (int64 tensor)       — 0=running, 1=terminated, 2=truncated; 0 on reset frames
+        episode_index (int)       — episode counter for this parallel env
+        reward_episodic (float)   — normalised training signal; 0.0 on reset frames
+        q_star (optional)         — float64[action_dim] expert Q-values when configured
+        ns_params (optional)      — surfaced when an env wrapper sets info["ns_params"]
 
-    Both sides of the contract are dicts: each ``result[i]["observation"]`` is a
-    dict keyed by channel (``"discrete"``, ``"continuous"``, and/or ``"image"``),
-    and each action input must be a dict too. Pass ``list[dict]`` where every
-    ``actions[i]["action"]`` is a dict with a ``"discrete"`` or ``"continuous"``
-    tensor; a bare tensor is rejected.
+    Inputs are flat dicts: each ``inputs[i]`` has a single ``"action"`` key holding
+    a tensor. Use ``env.input_spec.action`` to find the expected dtype and shape.
 
-    ``metrics`` uses the same env index as ``result`` (``metrics[i]``):
+    Introspect the full output and input contracts via ``env.output_spec`` and
+    ``env.input_spec``, which are :class:`OutputSpec` and :class:`InputSpec`
+    dataclasses with one :class:`FieldSpec` attribute per dict key.
+
+    ``metrics`` uses the same env index as ``outputs`` (``metrics[i]``):
         episode_cum_reward: list[float]   — empty unless env ``i`` finished on this step
         episode_length:     list[float]   — one value per finish on this step
 
@@ -114,27 +164,84 @@ class MouseVectorEnv:
         self._names = tuple(names)
         self._needs_initial_reset = True
         self._reset_reward = float(reset_reward)
-        self._obs_channel, self._obs_dtypes = self._build_obs_schema()
+        self._obs_channel, self._obs_dtypes, self._output_spec, self._input_spec = (
+            self._build_specs()
+        )
 
-    def _build_obs_schema(self) -> tuple[str | None, dict[str, torch.dtype]]:
-        """Record the output observation key(s) and their dtypes from the space.
+    def _build_specs(
+        self,
+    ) -> tuple[
+        str | None,
+        dict[str, torch.dtype],
+        OutputSpec,
+        InputSpec,
+    ]:
+        """Build observation schema and both spec objects once at construction.
 
-        Computed once at construction so ``_obs_for_index`` never inspects key names
-        at runtime. Returns ``(single_channel, dtypes)`` where ``single_channel`` is
-        the lone output key for non-dict spaces (``None`` for ``Dict`` spaces) and
-        ``dtypes`` maps each output key to its stored torch dtype.
+        Returns ``(single_channel, obs_dtypes, output_spec, input_spec)`` where
+        ``single_channel`` is the lone obs key for non-Dict spaces (``None`` for Dict
+        spaces) and ``obs_dtypes`` maps each obs output key to its torch dtype.
         """
-        space = self._env.single_observation_space
-        if isinstance(space, gym.spaces.Dict):
-            dtypes = {
-                key: _torch_dtype_for_space(sub) for key, sub in space.spaces.items()
+        obs_space = self._env.single_observation_space
+        act_space = self._env.single_action_space
+
+        # --- observation side ---
+        if isinstance(obs_space, gym.spaces.Dict):
+            obs_dtypes: dict[str, torch.dtype] = {
+                key: _torch_dtype_for_space(sub)
+                for key, sub in obs_space.spaces.items()
             }
-            return None, dtypes
-        if self.obs_key == "observation_discrete":
-            return OBS_KEY_DISCRETE, {OBS_KEY_DISCRETE: torch.int64}
-        if self.obs_key == "observation_image":
-            return OBS_KEY_IMAGE, {OBS_KEY_IMAGE: torch.float32}
-        return OBS_KEY_CONTINUOUS, {OBS_KEY_CONTINUOUS: torch.float32}
+            single_channel = None
+            obs_field: FieldSpec | dict[str, FieldSpec] = {
+                key: FieldSpec(
+                    dtype=obs_dtypes[key],
+                    shape=tuple(getattr(sub, "shape", ()) or ()),
+                )
+                for key, sub in obs_space.spaces.items()
+            }
+        else:
+            if self.obs_key == "observation_discrete":
+                obs_torch_dtype = torch.int64
+            elif self.obs_key == "observation_image":
+                obs_torch_dtype = torch.float32
+            else:
+                obs_torch_dtype = torch.float32
+            obs_dtypes = {OBS_KEY: obs_torch_dtype}
+            single_channel = OBS_KEY
+            obs_shape = tuple(getattr(obs_space, "shape", ()) or ())
+            obs_field = FieldSpec(dtype=obs_torch_dtype, shape=obs_shape)
+
+        # --- action side ---
+        if isinstance(act_space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete)):
+            act_torch_dtype = torch.int64
+            if isinstance(act_space, gym.spaces.Discrete):
+                act_shape: tuple[int, ...] = ()
+            else:
+                act_shape = (len(act_space.nvec),)
+        else:
+            act_torch_dtype = torch.float32
+            act_shape = tuple(getattr(act_space, "shape", ()) or ())
+
+        # --- q_star spec: only present when QStarWrapper is in the stack ---
+        action_dim = int(getattr(self._env, "action_dim", 0))
+        q_star_field: FieldSpec | None = None
+        if action_dim > 0 and self._has_q_star_wrapper():
+            q_star_field = FieldSpec(dtype=np.float64, shape=(action_dim,))
+
+        output_spec = OutputSpec(
+            time=FieldSpec(dtype=torch.int64, shape=()),
+            observation=obs_field,
+            reward=FieldSpec(dtype=torch.float32, shape=()),
+            done=FieldSpec(dtype=torch.int64, shape=()),
+            episode_index=FieldSpec(dtype=int, shape=()),
+            reward_episodic=FieldSpec(dtype=float, shape=()),
+            q_star=q_star_field,
+            ns_params=None,
+        )
+        input_spec = InputSpec(
+            action=FieldSpec(dtype=act_torch_dtype, shape=act_shape)
+        )
+        return single_channel, obs_dtypes, output_spec, input_spec
 
     @property
     def num_envs(self) -> int:
@@ -166,30 +273,47 @@ class MouseVectorEnv:
         """Forward action_dim from the inner EnvIdentityWrapper if available."""
         return getattr(self._env, "action_dim", 0)
 
+    @property
+    def output_spec(self) -> OutputSpec:
+        """Spec describing every field returned in each ``outputs[i]`` dict."""
+        return self._output_spec
+
+    @property
+    def input_spec(self) -> InputSpec:
+        """Spec describing every field expected in each ``inputs[i]`` dict."""
+        return self._input_spec
+
+    def _has_q_star_wrapper(self) -> bool:
+        """Return True if a QStarWrapper is present anywhere in the wrapper stack."""
+        from mouse_envs.wrappers import QStarWrapper
+
+        current: Any = self._env
+        while current is not None:
+            if isinstance(current, QStarWrapper):
+                return True
+            current = getattr(current, "env", None)
+        return False
+
     def _action_tensor(self, value: Any, *, dtype: torch.dtype) -> torch.Tensor:
         arr = np.asarray(value).flatten()
         if arr.size == 1:
             return torch.tensor(arr.item(), dtype=dtype)
         return torch.tensor(arr, dtype=dtype)
 
-    def sample_random_actions(self) -> list[dict]:
-        """Sample random actions as ``list[dict]`` with ``action`` dict keys."""
-        raw = cast(Any, self._env).sample_random_actions()
-        space = self._env.single_action_space
-        actions: list[dict] = []
+    def sample_random_inputs(self) -> list[dict]:
+        """Sample random actions as ``list[dict]`` with a flat ``"action"`` key."""
+        raw = cast(Any, self._env).sample_random_inputs()
+        act_dtype = cast(torch.dtype, self._input_spec.action.dtype)
+        inputs: list[dict] = []
         for i in range(self.num_envs):
-            if isinstance(space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete)):
-                action = {"discrete": self._action_tensor(raw[i], dtype=torch.int64)}
-            else:
-                action = {"continuous": self._action_tensor(raw[i], dtype=torch.float32)}
-            actions.append({"action": action})
-        return actions
+            inputs.append({ACTION_KEY: self._action_tensor(raw[i], dtype=act_dtype)})
+        return inputs
 
-    def step(self, actions: list[dict]) -> tuple[list[dict], list[dict]]:
-        """Step all envs; return ``(result, metrics)``.
+    def step(self, inputs: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Step all envs; return ``(outputs, metrics)``.
 
         On the first call after construction, performs an internal reset and returns
-        initial observations (actions are ignored). Otherwise applies ``actions`` to
+        initial observations (inputs are ignored). Otherwise applies ``inputs`` to
         all parallel envs.
         """
         if self._needs_initial_reset:
@@ -197,8 +321,8 @@ class MouseVectorEnv:
             obs, info = self._env.reset()
             return self._build_records(obs, info, is_reset=True)
         else:
-            raw_actions = self._unpack_actions(actions)
-            obs, reward, _terminated, _truncated, info = self._env.step(raw_actions)
+            raw_inputs = self._unpack_inputs(inputs)
+            obs, reward, _terminated, _truncated, info = self._env.step(raw_inputs)
             return self._build_records(obs, info, reward=reward, is_reset=False)
 
     def render(self) -> list:
@@ -217,88 +341,53 @@ class MouseVectorEnv:
     def close(self) -> None:
         self._env.close()
 
-    def _action_dict(self, action_record: dict[str, Any], index: int) -> dict[str, Any]:
-        """Return the action dict for env ``index``, enforcing the dict contract.
+    def _require_input(self, input_record: Any, index: int) -> np.ndarray:
+        """Extract and validate the ``"action"`` key from an input dict.
 
-        Each ``actions[i]["action"]`` must be a dict keyed by action type
-        (``"discrete"`` or ``"continuous"``); a bare tensor is rejected.
+        Each ``inputs[i]`` must be a dict with a single ``"action"`` key holding
+        a tensor or array; a non-dict or missing key is rejected.
         """
-        if not isinstance(action_record, dict):
+        if not isinstance(input_record, dict):
             raise ValueError(
-                f"actions[{index}] must be a dict with an 'action' entry, "
-                f"got {type(action_record).__name__}."
+                f"inputs[{index}] must be a dict with an '{ACTION_KEY}' entry, "
+                f"got {type(input_record).__name__}."
             )
-        try:
-            entry = action_record["action"]
-        except KeyError as exc:
+        if ACTION_KEY not in input_record:
             raise ValueError(
-                f"actions[{index}] is missing the required 'action' entry."
-            ) from exc
-        if not isinstance(entry, dict):
-            raise ValueError(
-                f"actions[{index}]['action'] must be a dict keyed by action type "
-                f"('{ACTION_KEY_DISCRETE}' or '{ACTION_KEY_CONTINUOUS}'), "
-                f"got {type(entry).__name__}."
+                f"inputs[{index}] must contain the '{ACTION_KEY}' key; "
+                f"got keys {sorted(input_record.keys())}."
             )
-        return entry
-
-    def _require_action_key(
-        self, entry: dict[str, Any], key: str, index: int
-    ) -> np.ndarray:
-        if key not in entry:
-            raise ValueError(
-                f"actions[{index}]['action'] must contain the '{key}' key for this "
-                f"action space; got keys {sorted(entry.keys())}."
-            )
-        value = cast(Any, entry)[key]
+        value = cast(Any, input_record)[ACTION_KEY]
         if hasattr(value, "numpy"):
             return value.numpy()
         return np.asarray(value)
 
-    def _unpack_actions(self, actions: list[dict]) -> np.ndarray:
+    def _unpack_inputs(self, inputs: list[dict]) -> np.ndarray:
         space = self._env.single_action_space
+        raw_list = [self._require_input(td, i) for i, td in enumerate(inputs)]
         if isinstance(space, gym.spaces.Discrete):
-            discrete_actions = [
-                self._require_action_key(
-                    self._action_dict(td, i), ACTION_KEY_DISCRETE, i
-                )
-                for i, td in enumerate(actions)
-            ]
-            raw = np.asarray(
-                [np.asarray(a).reshape(-1)[0] for a in discrete_actions],
-                dtype=np.int64,
+            return np.asarray(
+                [np.asarray(a).reshape(-1)[0] for a in raw_list], dtype=np.int64
             )
-        elif isinstance(space, gym.spaces.MultiDiscrete):
-            discrete_actions = [
-                self._require_action_key(
-                    self._action_dict(td, i), ACTION_KEY_DISCRETE, i
-                )
-                for i, td in enumerate(actions)
-            ]
-            raw = np.stack(
-                [np.asarray(a).reshape(-1) for a in discrete_actions]
+        if isinstance(space, gym.spaces.MultiDiscrete):
+            return np.stack(
+                [np.asarray(a).reshape(-1) for a in raw_list]
             ).astype(np.int64)
-        else:
-            continuous_actions = [
-                self._require_action_key(
-                    self._action_dict(td, i), ACTION_KEY_CONTINUOUS, i
-                )
-                for i, td in enumerate(actions)
-            ]
-            raw = np.stack(
-                [np.asarray(a).reshape(-1) for a in continuous_actions]
-            ).astype(np.float32)
-            raw = raw.reshape((self.num_envs, *space.shape))
-        return raw
+        raw = np.stack(
+            [np.asarray(a).reshape(-1) for a in raw_list]
+        ).astype(np.float32)
+        return raw.reshape((self.num_envs, *(getattr(space, "shape", ()) or ())))
 
     def _obs_for_index(self, obs: Any, i: int) -> dict[str, torch.Tensor]:
-        """Build observation dict for env index ``i`` (may contain multiple keys).
+        """Build observation field(s) for env index ``i``.
 
-        Dtypes come from the schema recorded at construction
-        (:meth:`_build_obs_schema`), derived from the observation space rather than
-        from channel/key names. Observations keep their native shape: image channels
-        stay 2-D/3-D (e.g. ``(84, 84)`` for preprocessed Atari), continuous channels
-        stay 1-D, and discrete channels stay scalar. No flattening is applied.
+        For ``Dict`` observation spaces the original subspace keys are placed directly
+        on the output dict. For all other spaces a single ``"observation"`` key is used.
+
+        Dtypes come from the schema recorded at construction (:meth:`_build_specs`),
+        derived from the observation space. Observations keep their native shape:
+        image channels stay 2-D/3-D, continuous channels stay 1-D, and discrete
+        channels stay scalar. No flattening is applied.
         """
         if isinstance(obs, dict):
             return {
@@ -381,23 +470,23 @@ class MouseVectorEnv:
         )
         ns_params = info.get("ns_params")
 
-        result: list[dict] = []
+        outputs: list[dict] = []
         for i in range(self.num_envs):
             entry: dict = {
                 TIME_KEY: torch.tensor(
                     int(info["episode_time"][i]), dtype=torch.int64
                 ),
-                "observation": self._obs_for_index(obs, i),
                 "reward": torch.tensor(float(reward_arr[i]), dtype=torch.float32),
                 "done": torch.tensor(int(done_arr[i]), dtype=torch.int64),
                 "episode_index": int(episode_index[i]),
                 "reward_episodic": float(xformed_arr[i]),
             }
+            entry.update(self._obs_for_index(obs, i))
             if q_star is not None:
                 entry["q_star"] = q_star[i]
             if ns_params is not None:
                 entry["ns_params"] = self._ns_params_for_env(ns_params, i)
-            result.append(entry)
+            outputs.append(entry)
 
         metrics = self._build_metrics(info, empty_episode_stats=is_reset)
-        return result, metrics
+        return outputs, metrics

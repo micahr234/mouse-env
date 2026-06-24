@@ -57,7 +57,7 @@ Required fields:
 
 Everything else on `EnvConfig` is optional (`name` overrides the base for `env.name` / `env.names`; other knobs cover reward shaping, partial observations, custom env wrappers, observation-channel routing, non-stationary physics, expert Q-values, reset-frame defaults, and so on). Check the docstrings when you need them.
 
-Expert Q-values are opt-in. Pass `q_star_source` directly when a rollout should include `results[i]["q_star"]`:
+Expert Q-values are opt-in. Pass `q_star_source` directly when a rollout should include `outputs[i]["q_star"]`:
 
 ```python
 cfg = EnvConfig(
@@ -77,27 +77,27 @@ cfg = EnvConfig(
 
 ## Run a rollout
 
-There is **no public `reset()`**. Call `step()` only. The first call performs an internal reset and returns initial observations; actions on that call are ignored.
+There is **no public `reset()`**. Call `step()` only. The first call performs an internal reset and returns initial observations; inputs on that call are ignored.
 
 mouse-env does this so the rollout stream has one shape from the first token onward. A reset frame still contains the same fields as a normal transition: `observation`, `reward`, `done`, `time`, and the rest of the training metadata. Training code does not need a separate method for the first environment interaction, and sequence models do not need to handle a shorter reset-only record.
 
 ```python
 for _ in range(1000):
-    actions = env.sample_random_actions()
-    results, metrics = env.step(actions)
+    inputs = env.sample_random_inputs()
+    outputs, metrics = env.step(inputs)
 ```
 
 Every `step()` returns the same two-part shape:
 
 ```python
-results, metrics = env.step(actions)
-# actions[i]["action"]: dict — discrete or continuous (input to step)
+outputs, metrics = env.step(inputs)
+# inputs[i]["action"]: tensor (input to step)
 # env.names[i]: environment name for vector index i
-# results[i]:  all per-step fields — observation, reward, done, time, episode_index, reward_episodic, optional q_star/ns_params
+# outputs[i]:  all per-step fields — observation, reward, done, time, episode_index, reward_episodic, optional q_star/ns_params
 # metrics[i]:  evaluation stats — cum reward, length
 ```
 
-**`env.names`** holds the environment names by vector index. These start with `EnvConfig.name` when provided, otherwise `EnvConfig.id`, and append `#0`, `#1`, and so on without repeating that name in every step record. **`results`** is the rollout stream. Each `results[i]` is a dict containing both the sequence-model inputs (observation, reward, done, time) and training/analysis context (episode_index, reward_episodic, and optionally q_star and ns_params). **`metrics`** sits alongside it at the same env index and summarizes episode outcomes for evaluation and logging.
+**`env.names`** holds the environment names by vector index. These start with `EnvConfig.name` when provided, otherwise `EnvConfig.id`, and append `#0`, `#1`, and so on without repeating that name in every step record. **`outputs`** is the rollout stream. Each `outputs[i]` is a dict containing both the sequence-model inputs (observation, reward, done, time) and training/analysis context (episode_index, reward_episodic, and optionally q_star and ns_params). **`metrics`** sits alongside it at the same env index and summarizes episode outcomes for evaluation and logging.
 
 When a sub-environment finishes, it auto-resets on the next step. That autoreset frame looks like the initial reset frame: it uses the configured `reset_reward` and always has `done == 0`. The actual episode boundary is the step where `done` is non-zero.
 
@@ -115,64 +115,65 @@ cfg = EnvConfig(
 
 ---
 
-## Input: actions
+## Input: inputs
 
-Pass a `list[dict]` of length `num_envs`. Each **`action` must be a dict** — use `"discrete"` or `"continuous"` to match the environment's action space. A bare tensor (e.g. `{"action": torch.tensor(2)}`) is rejected; the nested dict form mirrors the dict observation output:
+Pass a `list[dict]` of length `num_envs`. Each input dict has a single **`"action"`** key holding a tensor — no type suffix, no nested dict:
 
 ```python
 import torch
 
 # Discrete env (e.g. Procedural Frozen Lake, Atari, CartPole):
-actions = [
-    {"action": {"discrete": torch.tensor(2)}}
+inputs = [
+    {"action": torch.tensor(2, dtype=torch.int64)}
     for _ in range(env.num_envs)
 ]
 
 # Continuous env (e.g. Pendulum-v1, LunarLanderContinuous-v3):
-# {"action": {"continuous": torch.tensor(0.5)}}
+# {"action": torch.tensor(0.5, dtype=torch.float32)}
 
-results, metrics = env.step(actions)
+outputs, metrics = env.step(inputs)
 ```
 
-Pick the key by action space: `Discrete`/`MultiDiscrete` spaces use `"discrete"`
-(int64), and `Box` (continuous) spaces use `"continuous"` (float32). The
-`"continuous"` tensor carries one value per action dimension (`env.action_dim`);
-single-value actions are scalar tensors.
+Use `env.input_spec` to find the expected dtype and shape for any env:
 
-`env.sample_random_actions()` generates a valid action list with the same dict layout. On the first `step()` after construction, actions are ignored.
+```python
+spec = env.input_spec
+# spec.action.dtype  — torch.int64 for discrete spaces; torch.float32 for continuous
+# spec.action.shape  — () for scalar actions; (n,) for multi-dimensional
+```
+
+`env.sample_random_inputs()` generates a valid input list automatically. On the first `step()` after construction, inputs are ignored.
 
 ---
 
-## Output: `results`
+## Output: `outputs`
 
-`results` is a list of length `num_envs`. Each `results[i]` is a plain dict with all per-step fields:
+`outputs` is a list of length `num_envs`. Each `outputs[i]` is a plain dict with all per-step fields:
 
 ```python
 {
-    "time": torch.tensor(int, dtype=torch.int64),
-    "observation": {
-        "discrete":   torch.tensor([...], dtype=torch.int64),    # optional
-        "continuous": torch.tensor([...], dtype=torch.float32),  # optional
-        "image":      torch.tensor([...], dtype=torch.float32),  # optional
-    },
-    "reward": torch.tensor(float, dtype=torch.float32),
-    "done": torch.tensor(int, dtype=torch.int64),
-    "episode_index": int,
+    "time":            torch.tensor(int,   dtype=torch.int64),
+    "observation":     torch.tensor([...], dtype=...),   # tensor; dtype and shape from env.output_spec.observation
+    "reward":          torch.tensor(float, dtype=torch.float32),
+    "done":            torch.tensor(int,   dtype=torch.int64),
+    "episode_index":   int,
     "reward_episodic": float,
     # optional:
-    "q_star": np.ndarray,   # float64[action_dim], when configured;
-                            # one-hot/Q-values for discrete spaces,
-                            # the expert action vector for continuous spaces
-    "ns_params": dict,      # when an env wrapper sets info["ns_params"]
+    "q_star":   np.ndarray,  # float64[action_dim], when configured;
+                             # one-hot/Q-values for discrete spaces,
+                             # the expert action vector for continuous spaces
+    "ns_params": dict,       # when an env wrapper sets info["ns_params"]
 }
 ```
+
+For `gym.spaces.Dict` observation spaces, the subspace keys appear **directly** on the output dict instead of under `"observation"` (e.g. `outputs[0]["pos"]`, `outputs[0]["tile"]`).
 
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `time` | int64 tensor | Step index within the current episode (0-based). `0` on reset frames. |
-| `observation` | dict of tensors | Any combination of `discrete`, `continuous`, and/or `image` keys. |
+| `observation` | tensor | The observation tensor. dtype and shape are described by `env.output_spec.observation`. |
 | `reward` | float32 tensor | Raw environment reward. Uses `reset_reward` on reset frames. |
 | `done` | int64 tensor | `0` running · `1` terminated · `2` truncated. Reset frames always use `0`. |
 | `episode_index` | int | Episode counter for this parallel env. |
@@ -180,13 +181,36 @@ single-value actions are scalar tensors.
 | `q_star` | float64 array | Expert Q-values when configured (optional). |
 | `ns_params` | dict | Surfaced when an env wrapper sets `info["ns_params"]` (e.g. non-stationary envs); optional. |
 
-Observations keep their native shape. Image observations (e.g. preprocessed Atari) stay 2-D/3-D in `observation["image"]` — for example an 84×84 `AtariPreprocessing` frame arrives as an `(84, 84)` tensor, not a flat vector. Continuous channels stay 1-D and discrete channels stay scalar.
+Observations keep their native shape. Image observations (e.g. preprocessed Atari) stay 2-D/3-D — for example an 84×84 `AtariPreprocessing` frame arrives as an `(84, 84)` tensor, not a flat vector. Continuous channels stay 1-D and discrete channels stay scalar.
+
+### Introspecting the contract: `output_spec` and `input_spec`
+
+`env.output_spec` and `env.input_spec` are dataclasses with one `FieldSpec(dtype, shape)` attribute per key in the output / input dict. They describe the full contract at construction time, before any steps:
+
+```python
+from mouse_envs import FieldSpec, OutputSpec, InputSpec
+
+ospec = env.output_spec   # OutputSpec
+ispec = env.input_spec    # InputSpec
+
+ospec.observation.dtype   # torch.float32 (continuous/image) or torch.int64 (discrete)
+ospec.observation.shape   # (4,) for CartPole; () for FrozenLake; (84, 84) for Atari
+ospec.time.dtype          # torch.int64
+ospec.reward.dtype        # torch.float32
+ospec.q_star              # FieldSpec(np.float64, (action_dim,)) or None when not configured
+
+ispec.action.dtype        # torch.int64 (discrete) or torch.float32 (continuous)
+ispec.action.shape        # () for scalar actions; (n,) for multi-dimensional
+
+# Dict observation space: observation is a dict of FieldSpecs
+ospec.observation         # {"pos": FieldSpec(torch.float32, (2,)), "tile": FieldSpec(torch.int64, (1,))}
+```
 
 ---
 
 ## Output: `metrics`
 
-**Not model input — evaluation.** Episode statistics for the current step, aligned with `results[i]`. Use these to measure returns and episode lengths without parsing the rollout stream. For env `i`, read `metrics[i]`:
+**Not model input — evaluation.** Episode statistics for the current step, aligned with `outputs[i]`. Use these to measure returns and episode lengths without parsing the rollout stream. For env `i`, read `metrics[i]`:
 
 | Field | Description |
 |-------|-------------|
@@ -199,7 +223,7 @@ Each field is a (possibly empty) list of floats:
 - **`[value]`** — env `i` finished once; one entry per finish on this step.
 - **`[v1, v2, …]`** — env `i` finished multiple times on this step (unusual, but supported by the shape).
 
-Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `results[i]["reward_episodic"]`.
+Note: `metrics[i]["episode_cum_reward"]` always reflects the **raw** (unscaled) return, even when reward shaping is enabled. The shaped training signal is in `outputs[i]["reward_episodic"]`.
 
 ---
 
@@ -218,7 +242,7 @@ Envs that need an extra package install it via an optional extra: `pip install '
 
 Runnable Jupyter notebooks in [`examples/`](../examples/):
 
-- [01_random_rollout.ipynb](../examples/01_random_rollout.ipynb) — minimal end-to-end rollout and the `results`/`metrics` shape.
+- [01_random_rollout.ipynb](../examples/01_random_rollout.ipynb) — minimal end-to-end rollout and the `outputs`/`metrics` shape.
 - [02_q_star_expert.ipynb](../examples/02_q_star_expert.ipynb) — expert Q-values via `q_star_source` (Procedural Frozen Lake).
 - [03_ns_gym_oscillating.ipynb](../examples/03_ns_gym_oscillating.ipynb) — non-stationary CartPole (NS-Gym) built with an `env_fn` factory.
 - [04_atari_preprocessing.ipynb](../examples/04_atari_preprocessing.ipynb) — Atari Pong with `AtariPreprocessing` via `env_fn` + `observation_kind="image"`.

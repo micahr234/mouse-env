@@ -62,8 +62,10 @@ def _is_discrete_like(space: gym.Space) -> bool:
 def resolve_obs_key(
     env: gym.vector.VectorEnv, observation_kind: str | None = None
 ) -> str:
-    """Return the canonical observation-dict key for this env's observation space.
+    """Return the internal routing key for this env's observation channel.
 
+    Used internally to select the flat observation field written to each result record
+    (``observation_discrete``, ``observation_continuous``, or ``observation_image``).
     ``observation_kind`` (``"continuous"``, ``"discrete"``, or ``"image"``) forces a
     channel explicitly; ``None`` auto-detects from the observation space. Auto-detection
     cannot recognise image spaces (an image is a ``uint8`` ``Box`` that otherwise looks
@@ -236,7 +238,7 @@ class EnvIdentityWrapper(gym.vector.VectorWrapper):
             return len(space.nvec)
         return int(getattr(space, "n", 0))
 
-    def sample_random_actions(self) -> np.ndarray:
+    def sample_random_inputs(self) -> np.ndarray:
         return np.asarray(self.action_space.sample())
 
     def reset(self, **kwargs: Any):
@@ -293,8 +295,8 @@ class QStarWrapper(gym.vector.VectorWrapper):
     def action_dim(self) -> int:
         return cast(Any, self.env).action_dim
 
-    def sample_random_actions(self) -> np.ndarray:
-        return cast(Any, self.env).sample_random_actions()
+    def sample_random_inputs(self) -> np.ndarray:
+        return cast(Any, self.env).sample_random_inputs()
 
     def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
         """Convert expert actions into the ``metadata_q_star`` representation.

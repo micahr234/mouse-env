@@ -10,6 +10,7 @@ from __future__ import annotations
 import gymnasium as gym
 import numpy as np
 import pytest
+import torch
 
 from mouse_envs import EnvConfig, make_vector_env
 
@@ -44,16 +45,19 @@ def test_atari_vector_preprocessing() -> None:
     env = make_vector_env(cfg)
     try:
         assert env.obs_key == "observation_image"
-        result, metrics = env.step(env.sample_random_actions())
-        assert len(result) == 2
+        outputs, metrics = env.step(env.sample_random_inputs())
+        assert len(outputs) == 2
         assert len(metrics) == 2
-        assert "id" in result[0]
+        assert "id" in outputs[0]
 
-        batch = np.stack([r["observation"]["image"].numpy() for r in result])
+        batch = np.stack([r["observation"].numpy() for r in outputs])
         assert batch.shape == (2, 84, 84)
         assert batch.dtype == np.float32
 
-        for r in result:
+        assert env.output_spec.observation.shape == (84, 84)
+        assert env.output_spec.observation.dtype == torch.float32
+
+        for r in outputs:
             assert r["time"].item() == 0
             assert r["reward"].item() == 0.0
             assert r["done"].item() == 0
@@ -72,11 +76,11 @@ def test_atari_multi_step_rollout() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        env.step(env.sample_random_actions())
-        result, _metrics = env.step(env.sample_random_actions())
-        assert result[0]["time"].item() >= 1
-        assert "discrete" not in result[0]["observation"]
-        assert "image" in result[0]["observation"]
+        env.step(env.sample_random_inputs())
+        outputs, _metrics = env.step(env.sample_random_inputs())
+        assert outputs[0]["time"].item() >= 1
+        assert "observation" in outputs[0]
+        assert outputs[0]["observation"].dtype == torch.float32
     finally:
         env.close()
 
@@ -92,9 +96,11 @@ def test_atari_discrete_action_sampling() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        actions = env.sample_random_actions()
-        assert len(actions) == 1
-        assert "discrete" in actions[0]["action"]
+        inputs = env.sample_random_inputs()
+        assert len(inputs) == 1
+        assert "action" in inputs[0]
+        assert inputs[0]["action"].dtype == torch.int64
+        assert env.input_spec.action.dtype == torch.int64
     finally:
         env.close()
 
@@ -110,9 +116,10 @@ def test_atari_without_preprocessing() -> None:
     )
     env = make_vector_env(cfg)
     try:
-        result, _metrics = env.step(env.sample_random_actions())
-        # Raw ALE frames are RGB; observation.image keeps its native (210, 160, 3) shape.
-        img = result[0]["observation"]["image"]
+        outputs, _metrics = env.step(env.sample_random_inputs())
+        # Raw ALE frames are RGB; observation keeps its native (210, 160, 3) shape.
+        img = outputs[0]["observation"]
         assert tuple(img.shape) == (210, 160, 3)
+        assert env.output_spec.observation.shape == (210, 160, 3)
     finally:
         env.close()

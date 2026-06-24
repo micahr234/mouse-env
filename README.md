@@ -10,7 +10,7 @@ Most RL benchmarks are episodic: an agent acts until termination or truncation, 
 
 You can stitch episodes together on top of Gymnasium yourself, but the result is usually ad hoc. Important choices become arbitrary: whether reset observations are kept, how episode boundaries are marked, and how rewards behave at the boundary. **mouse-env** makes the episode-to-continuing conversion explicit and consistent in three ways:
 
-* **Reset-free rollout.** Users keep calling `step(actions)`. When an episode ends, mouse-env resets the underlying environment internally and returns the next observation without requiring a public `reset()` call.
+* **Reset-free rollout.** Users keep calling `step(inputs)`. When an episode ends, mouse-env resets the underlying environment internally and returns the next observation without requiring a public `reset()` call.
 * **Visible episode structure.** Terminations, truncations, and reset frames stay in the data returned by the environment, so agents and analysis code can see where one episode ended and the next began.
 * **Cross-episode friendly rewards.** In episodic RL, credit is cut off at the reset boundary. A reward in the next episode does not encourage useful behavior in the previous one. mouse-env keeps raw environment rewards available, and also exposes a transformed reward signal that allows credit to pass across resets.
 
@@ -36,7 +36,7 @@ source scripts/install.sh
 
 ## Quick start 🚀
 
-Build an env, sample actions, and keep stepping:
+Build an env, sample inputs, and keep stepping:
 
 ```python
 from mouse_envs import EnvConfig, make_vector_env
@@ -50,8 +50,8 @@ cfg = EnvConfig(
 env = make_vector_env(cfg)
 
 for _ in range(1000):
-    actions = env.sample_random_actions()
-    results, metrics = env.step(actions)
+    inputs = env.sample_random_inputs()
+    outputs, metrics = env.step(inputs)
 
 env.close()
 ```
@@ -62,16 +62,16 @@ See **[docs/guide.md](docs/guide.md)** for full field-level documentation, plus 
 
 ## Core API ⚙️
 
-There is no public rollout-time `reset()` call. The first `step()` quietly performs an internal reset and returns the initial observation using the same record shape as every other step. Actions passed on that first call are ignored.
+There is no public rollout-time `reset()` call. The first `step()` quietly performs an internal reset and returns the initial observation using the same record shape as every other step. Inputs passed on that first call are ignored.
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
 Each call returns two objects:
 
-* **`results`** — model-visible training data, including observations (`discrete`, `continuous`, and/or `image` tensor channels), rewards, done flags, time, episode metadata, optional `q_star` target expert action-values, and environment-specific fields
+* **`outputs`** — model-visible training data, including an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields
 * **`metrics`** — logging data, such as true episodic return and episode length, emitted when episodes end
 
-`actions` are plain dictionaries with the same nested action-channel shape as observations.
+`inputs` are plain dictionaries with a single `"action"` tensor key. Use `env.input_spec` to discover the expected dtype and shape for the current env. Use `env.output_spec` to discover the dtype and shape of every field in the output dict.
 
 Episode boundaries are represented by integer-coded `done` values:
 
@@ -79,7 +79,7 @@ Episode boundaries are represented by integer-coded `done` values:
 * `1` = terminated
 * `2` = truncated
 
-Reset frames are ordinary `results` records with:
+Reset frames are ordinary `outputs` records with:
 
 * the first observation of the new episode
 * `time=0`
@@ -94,7 +94,7 @@ This keeps the rollout stream uniform while still making episode structure expli
 
 Pass any Gymnasium environment id as `id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
 
-Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `#0`, `#1`, and so on. `env.name` returns the first name for single-env use. Step results do not repeat this name on every record.
+Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `#0`, `#1`, and so on. `env.name` returns the first name for single-env use. Step outputs do not repeat this name on every record.
 
 mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 
@@ -118,7 +118,7 @@ mouse-env also includes a few knobs for augmenting and modifying environments.
 
 ### Expert Q-values (`q_star_source`)
 
-Expert Q-values are exposed as `results[i]["q_star"]`. They are useful for supervision, diagnostics, or comparing learned behavior against an expert or exact tabular solution.
+Expert Q-values are exposed as `outputs[i]["q_star"]`. They are useful for supervision, diagnostics, or comparing learned behavior against an expert or exact tabular solution.
 
 Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
@@ -148,7 +148,7 @@ Example: [examples/05_partial_observability.ipynb](examples/05_partial_observabi
 
 ### Reward shaping
 
-Use `reward_scale` and `reward_shift`; the normalized training signal appears in `results[i]["reward_episodic"]`.
+Use `reward_scale` and `reward_shift`; the normalized training signal appears in `outputs[i]["reward_episodic"]`.
 
 Example: [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb)
 
