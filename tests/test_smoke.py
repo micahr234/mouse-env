@@ -77,8 +77,8 @@ def test_output_spec_and_input_spec_cartpole() -> None:
         assert ospec.done.dtype == torch.int64
         assert ospec.episode_index.dtype == int
         assert ospec.task_index.dtype == int
-        assert ospec.q_star is None
-        assert ospec.ns_params is None
+        assert not hasattr(ospec, "q_star")
+        assert not hasattr(ospec, "ns_params")
 
         assert isinstance(ispec.action, FieldSpec)
         assert ispec.action.dtype == torch.int64
@@ -87,7 +87,7 @@ def test_output_spec_and_input_spec_cartpole() -> None:
         env.close()
 
 
-def test_output_spec_frozenlake_with_q_star() -> None:
+def test_output_spec_frozenlake_obs() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
         seed=0,
@@ -101,9 +101,8 @@ def test_output_spec_frozenlake_with_q_star() -> None:
         assert isinstance(ospec.observation, FieldSpec)
         assert ospec.observation.dtype == torch.int64
         assert ospec.observation.shape == ()
-        assert ospec.q_star is not None
-        assert ospec.q_star.dtype == np.float64
-        assert ospec.q_star.shape == (4,)
+        # Q-values appear as info_metadata_q_star in step outputs, not in OutputSpec.
+        assert not hasattr(ospec, "q_star")
     finally:
         env.close()
 
@@ -215,9 +214,9 @@ def test_procedural_frozenlake_vector() -> None:
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
-        assert "q_star" in outputs[0]
-        assert outputs[0]["q_star"].shape == (4,)
-        assert outputs[1]["q_star"].shape == (4,)
+        assert "info_metadata_q_star" in outputs[0]
+        assert outputs[0]["info_metadata_q_star"].shape == (4,)
+        assert outputs[1]["info_metadata_q_star"].shape == (4,)
         for r in outputs:
             assert "observation" in r
     finally:
@@ -236,7 +235,7 @@ def test_synthetic_vector() -> None:
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
-        assert "q_star" in outputs[0]
+        assert "info_metadata_q_star" in outputs[0]
         for r in outputs:
             assert "observation" in r
     finally:

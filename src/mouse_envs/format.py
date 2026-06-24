@@ -57,7 +57,8 @@ class OutputSpec:
     subspace key appears directly on the output dict rather than under an
     ``"observation"`` key).
 
-    Optional fields (``q_star``, ``ns_params``) are ``None`` when not configured.
+    Every key from the underlying Gymnasium ``info`` dict is forwarded verbatim as
+    ``info_<key>`` in the step output. No env-specific filtering is applied.
     """
 
     time: FieldSpec
@@ -66,8 +67,6 @@ class OutputSpec:
     done: FieldSpec
     episode_index: FieldSpec
     task_index: FieldSpec
-    q_star: FieldSpec | None
-    ns_params: FieldSpec | None
 
 
 @dataclass
@@ -89,6 +88,12 @@ class StepOutput(TypedDict, total=False):
     The ``observation`` field is a flat tensor (not a nested dict). For
     ``gym.spaces.Dict`` observation spaces, the subspace keys appear directly on the
     output dict instead.
+
+    Every key from the underlying Gymnasium ``info`` dict is forwarded as
+    ``info_<key>``. For example, ``info["metadata_q_star"]`` appears as
+    ``outputs[i]["info_metadata_q_star"]``, ``info["map"]`` as
+    ``outputs[i]["info_map"]``, and ``info["ns_params"]`` as
+    ``outputs[i]["info_ns_params"]``.
     """
 
     time: Required[torch.Tensor]
@@ -97,8 +102,6 @@ class StepOutput(TypedDict, total=False):
     done: Required[torch.Tensor]
     episode_index: Required[int]
     task_index: Required[int]
-    q_star: Any
-    ns_params: Any
 
 
 class MetricsTracker:
@@ -200,16 +203,6 @@ class _Slot:
     def input_spec(self) -> InputSpec:
         return self._input_spec
 
-    def _has_q_star_wrapper(self) -> bool:
-        from mouse_envs.wrappers import QStarWrapper
-
-        current: Any = self._env
-        while current is not None:
-            if isinstance(current, QStarWrapper):
-                return True
-            current = getattr(current, "env", None)
-        return False
-
     def _build_specs(
         self,
     ) -> tuple[
@@ -258,12 +251,6 @@ class _Slot:
             act_torch_dtype = torch.float32
             act_shape = tuple(getattr(act_space, "shape", ()) or ())
 
-        # --- q_star spec ---
-        action_dim = int(getattr(self._env, "action_dim", 0))
-        q_star_field: FieldSpec | None = None
-        if action_dim > 0 and self._has_q_star_wrapper():
-            q_star_field = FieldSpec(dtype=np.float64, shape=(action_dim,))
-
         output_spec = OutputSpec(
             time=FieldSpec(dtype=torch.int64, shape=()),
             observation=obs_field,
@@ -271,8 +258,6 @@ class _Slot:
             done=FieldSpec(dtype=torch.int64, shape=()),
             episode_index=FieldSpec(dtype=int, shape=()),
             task_index=FieldSpec(dtype=int, shape=()),
-            q_star=q_star_field,
-            ns_params=None,
         )
         input_spec = InputSpec(action=FieldSpec(dtype=act_torch_dtype, shape=act_shape))
         return single_channel, obs_dtypes, output_spec, input_spec
@@ -342,12 +327,11 @@ class _Slot:
         }
         output.update(self._obs_entry(obs))
 
-        q_star = info.get("metadata_q_star")
-        if q_star is not None:
-            output["q_star"] = np.asarray(q_star, dtype=np.float64)
-        ns_params = info.get("ns_params")
-        if ns_params is not None:
-            output["ns_params"] = ns_params
+        if isinstance(info, dict):
+            for key, value in info.items():
+                output[f"info_{key}"] = value
+        elif info is not None:
+            output["info"] = info
 
         return output, None
 
@@ -404,12 +388,11 @@ class _Slot:
         }
         output.update(self._obs_entry(obs))
 
-        q_star = info.get("metadata_q_star")
-        if q_star is not None:
-            output["q_star"] = np.asarray(q_star, dtype=np.float64)
-        ns_params = info.get("ns_params")
-        if ns_params is not None:
-            output["ns_params"] = ns_params
+        if isinstance(info, dict):
+            for key, value in info.items():
+                output[f"info_{key}"] = value
+        elif info is not None:
+            output["info"] = info
 
         episode_result: tuple[float, float] | None
         if done != DONE_RUNNING:
@@ -463,8 +446,11 @@ class MouseEnv:
                                     3=task terminated, 4=task truncated
         episode_index (int)       — episode counter for this slot
         task_index (int)          — task counter for this slot
-        q_star (optional)         — float64[action_dim] expert Q-values when configured
-        ns_params (optional)      — surfaced when an env wrapper sets info["ns_params"]
+        info_<key> (any)          — every key from the Gymnasium info dict is forwarded as
+                                    ``info_<key>``. For example, ``info["metadata_q_star"]``
+                                    from a Q* wrapper appears as ``info_metadata_q_star``,
+                                    ``info["map"]`` as ``info_map``, ``info["ns_params"]``
+                                    as ``info_ns_params``.
 
     Introspect the full output and input contracts via ``env.output_specs[i]`` and
     ``env.input_specs[i]``, which are :class:`OutputSpec` and :class:`InputSpec`

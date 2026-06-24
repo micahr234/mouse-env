@@ -3,7 +3,7 @@
 mouse-env has no NS-Gym integration code. A non-stationary env is built like any other
 custom env: construct the NS-Gym wrapper in an ``env_fn`` and apply a small adapter that
 flattens NS-Gym's dict observation and exposes ``info["ns_params"]`` (which mouse-env
-surfaces as ``results[i]["ns_params"]``).
+surfaces as ``results[i]["info_ns_params"]``).
 """
 
 from __future__ import annotations
@@ -75,8 +75,8 @@ def test_non_stationary_cartpole() -> None:
         outputs = env.step(env.sample_random_inputs())
         for _ in range(3):
             outputs = env.step(env.sample_random_inputs())
-        assert "ns_params" in outputs[0]
-        assert "length" in outputs[0]["ns_params"]
+        assert "info_ns_params" in outputs[0]
+        assert "length" in outputs[0]["info_ns_params"]
         assert "observation" in outputs[0]
     finally:
         env.close()
