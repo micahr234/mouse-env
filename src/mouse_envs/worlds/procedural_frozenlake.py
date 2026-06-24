@@ -507,7 +507,7 @@ def ensure_procedural_frozenlake_registered() -> None:
     """Register ``Procedural-FrozenLake-v1`` with Gymnasium exactly once.
 
     Safe to call multiple times; subsequent calls are no-ops. Called automatically
-    by :func:`~mouse_envs.make_vector_env` when ``id`` matches
+    by :func:`~mouse_envs.make_env` when ``id`` matches
     :data:`PROCEDURAL_FROZENLAKE_ENV_ID`.
     """
     if PROCEDURAL_FROZENLAKE_ENV_ID in registry:

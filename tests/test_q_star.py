@@ -1,4 +1,4 @@
-"""Offline tests for expert Q* adapters and vector-env metadata injection."""
+"""Offline tests for expert Q* adapters and env metadata injection."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_env
 from mouse_envs.experts.action_star import (
     action_star_to_continuous_q_star,
     action_star_to_one_hot_q_star,
@@ -19,9 +19,9 @@ from mouse_envs.experts.action_star import (
 
 
 def _rollout(env, steps: int = 3):
-    outputs, metrics = env.step(env.sample_random_inputs())
+    [(outputs, metrics)] = env.step(env.sample_random_inputs())
     for _ in range(steps - 1):
-        outputs, metrics = env.step(env.sample_random_inputs())
+        [(outputs, metrics)] = env.step(env.sample_random_inputs())
     return outputs, metrics
 
 
@@ -74,17 +74,15 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
         raise AssertionError("hf_hub_download must not be called when path is set")
 
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
-        env = make_vector_env(cfg)
+        env = make_env(cfg)
     try:
-        assert env.action_dim == 1
+        assert env.input_specs[0].action.shape == (1,)
         result, _metrics = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
         # Continuous expert: q_star carries the expert action vector, not one-hot.
         assert q_star.shape == (1,)
         assert np.all(np.isfinite(q_star))
-        low = float(env.single_action_space.low[0])
-        high = float(env.single_action_space.high[0])
-        assert low <= float(q_star[0]) <= high
+        assert -2.0 <= float(q_star[0]) <= 2.0
     finally:
         env.close()
 
@@ -97,7 +95,7 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
         max_episode_steps=50,
         q_star_source={"provider": "metadata_q_star"},
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
@@ -118,7 +116,7 @@ def test_metadata_q_star_synthetic_matches_action_dim() -> None:
         kwargs={"obs_size": 8, "action_size": 3},
         q_star_source={"provider": "metadata_q_star"},
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
         assert result[0]["q_star"].shape == (3,)
@@ -147,7 +145,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
         raise AssertionError("hf_hub_download must not be called when path is set")
 
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
-        env = make_vector_env(cfg)
+        env = make_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
@@ -202,7 +200,7 @@ def test_hf_q_table_vector_env_integration(
         raise AssertionError("hf_hub_download must not be called when path is set")
 
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
-        env = make_vector_env(cfg)
+        env = make_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
@@ -220,7 +218,7 @@ def test_q_star_absent_when_disabled() -> None:
         num_envs=1,
         max_episode_steps=50,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         result, _metrics = _rollout(env, steps=2)
         assert "q_star" not in result[0]

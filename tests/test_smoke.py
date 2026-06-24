@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 import torch
 
-from mouse_envs import EnvConfig, FieldSpec, InputSpec, OutputSpec, make_vector_env
+from mouse_envs import EnvConfig, FieldSpec, InputSpec, OutputSpec, make_env
 
 
 def _rollout(env, steps: int = 5) -> tuple[list, list]:
-    outputs, metrics = env.step(env.sample_random_inputs())
+    [(outputs, metrics)] = env.step(env.sample_random_inputs())
     for _ in range(steps - 1):
-        outputs, metrics = env.step(env.sample_random_inputs())
+        [(outputs, metrics)] = env.step(env.sample_random_inputs())
     return outputs, metrics
 
 
@@ -25,16 +25,16 @@ def test_cartpole_step_contract() -> None:
         num_envs=3,
         max_episode_steps=50,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, metrics = _rollout(env)
         assert len(outputs) == 3
         assert len(metrics) == 3
-        assert env.name == "train-cartpole#0"
+        assert env.names[0] == "train-cartpole#0"
         assert env.names == ("train-cartpole#0", "train-cartpole#1", "train-cartpole#2")
         sampled = env.sample_random_inputs()
-        assert "action" in sampled[0]
-        assert sampled[0]["action"].ndim == 0
+        assert "action" in sampled[0][0]
+        assert sampled[0][0]["action"].ndim == 0
         for i, r in enumerate(outputs):
             assert set(r.keys()) >= {
                 "time",
@@ -61,10 +61,10 @@ def test_output_spec_and_input_spec_cartpole() -> None:
         num_envs=1,
         max_episode_steps=50,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        ospec = env.output_spec
-        ispec = env.input_spec
+        ospec = env.output_specs[0]
+        ispec = env.input_specs[0]
 
         assert isinstance(ospec, OutputSpec)
         assert isinstance(ispec, InputSpec)
@@ -97,9 +97,9 @@ def test_output_spec_frozenlake_with_q_star() -> None:
         max_episode_steps=50,
         q_star_source={"provider": "metadata_q_star"},
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        ospec = env.output_spec
+        ospec = env.output_specs[0]
         assert isinstance(ospec.observation, FieldSpec)
         assert ospec.observation.dtype == torch.int64
         assert ospec.observation.shape == ()
@@ -117,17 +117,17 @@ def test_pendulum_continuous_step_contract() -> None:
         num_envs=2,
         max_episode_steps=50,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        assert env.action_dim == 1
+        assert env.input_specs[0].action.shape == (1,)
         sampled = env.sample_random_inputs()
-        action = sampled[0]
+        action = sampled[0][0]
         assert "action" in action
         assert action["action"].dtype == torch.float32
         assert action["action"].ndim == 0
 
-        assert env.input_spec.action.dtype == torch.float32
-        assert env.output_spec.observation.dtype == torch.float32
+        assert env.input_specs[0].action.dtype == torch.float32
+        assert env.output_specs[0].observation.dtype == torch.float32
 
         outputs, metrics = _rollout(env)
         assert len(outputs) == 2
@@ -145,13 +145,13 @@ def test_action_input_contract_is_enforced() -> None:
         num_envs=1,
         max_episode_steps=50,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         env.step(env.sample_random_inputs())  # initial reset frame
-        not_a_dict = [torch.tensor(0) for _ in range(env.num_envs)]
+        not_a_dict = [[torch.tensor(0)]]
         with pytest.raises(ValueError, match="must be a dict"):
             env.step(not_a_dict)
-        missing_key = [{"wrong": torch.tensor(0)} for _ in range(env.num_envs)]
+        missing_key = [[{"wrong": torch.tensor(0)}]]
         with pytest.raises(ValueError, match="action"):
             env.step(missing_key)
     finally:
@@ -189,15 +189,15 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
         max_episode_steps=10,
         env_fn=lambda: DictObsEnv(),
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, _metrics = _rollout(env, steps=2)
         # Float subspace -> float32; integer subspace -> int64, regardless of key name.
         assert outputs[0]["pos"].dtype == torch.float32
         assert outputs[0]["tile"].dtype == torch.int64
 
-        # output_spec.observation is a dict of FieldSpecs for Dict obs spaces
-        ospec = env.output_spec
+        # output_specs[0].observation is a dict of FieldSpecs for Dict obs spaces
+        ospec = env.output_specs[0]
         assert isinstance(ospec.observation, dict)
         assert ospec.observation["pos"].dtype == torch.float32
         assert ospec.observation["tile"].dtype == torch.int64
@@ -213,7 +213,7 @@ def test_procedural_frozenlake_vector() -> None:
         max_episode_steps=50,
         q_star_source={"provider": "metadata_q_star"},
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, metrics = _rollout(env)
         assert len(outputs) == 2
@@ -234,7 +234,7 @@ def test_synthetic_vector() -> None:
         max_episode_steps=50,
         q_star_source={"provider": "metadata_q_star"},
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, _metrics = _rollout(env)
         assert len(outputs) == 2
@@ -253,12 +253,12 @@ def test_partial_observability() -> None:
         max_episode_steps=50,
         observation_indices=[0, 2],
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, _metrics = _rollout(env, steps=2)
         obs = outputs[0]["observation"]
         assert obs.shape == (2,)
-        assert env.output_spec.observation.shape == (2,)
+        assert env.output_specs[0].observation.shape == (2,)
     finally:
         env.close()
 
@@ -271,9 +271,9 @@ def test_reset_frame_contract() -> None:
         max_episode_steps=50,
         reset_reward=-1.0,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        outputs, metrics = env.step(env.sample_random_inputs())
+        [(outputs, metrics)] = env.step(env.sample_random_inputs())
         assert outputs[0]["time"].item() == 0
         assert "action" not in outputs[0]
         assert outputs[0]["reward"].item() == -1.0
@@ -285,10 +285,10 @@ def test_reset_frame_contract() -> None:
 
 
 def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int]:
-    outputs, metrics = env.step(env.sample_random_inputs())
+    [(outputs, metrics)] = env.step(env.sample_random_inputs())
     for step in range(1, max_steps):
         prev_time = outputs[0]["time"].item()
-        outputs, metrics = env.step(env.sample_random_inputs())
+        [(outputs, metrics)] = env.step(env.sample_random_inputs())
         if outputs[0]["time"].item() == 0 and prev_time > 0:
             return outputs, metrics, step
     raise AssertionError(f"no autoreset frame within {max_steps} steps")
@@ -303,7 +303,7 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
         reward_scale=0.5,
         reward_shift=1.0,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, metrics, _step = _roll_until_autoreset(env)
         assert outputs[0]["time"].item() == 0
@@ -329,7 +329,7 @@ def test_env_fn_factory() -> None:
         max_episode_steps=50,
         env_fn=make_cartpole,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         outputs, _metrics = _rollout(env, steps=2)
         assert len(outputs) == 2
@@ -348,19 +348,19 @@ def test_observation_kind_override() -> None:
         max_episode_steps=50,
         observation_kind="discrete",
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        assert env.obs_key == "observation_discrete"
+        assert env._inners[0].obs_key == "observation_discrete"
         outputs, _metrics = _rollout(env, steps=2)
         assert "observation" in outputs[0]
-        assert env.output_spec.observation.dtype == torch.int64
+        assert env.output_specs[0].observation.dtype == torch.int64
     finally:
         env.close()
 
 
-def test_make_vector_env_requires_max_steps() -> None:
+def test_make_env_requires_max_steps() -> None:
     with pytest.raises(ValueError, match="max_episode_steps"):
-        make_vector_env(
+        make_env(
             EnvConfig(
                 id="CartPole-v1",
                 seed=0,

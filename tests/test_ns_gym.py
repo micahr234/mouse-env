@@ -14,7 +14,7 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_env
 
 pytest.importorskip("ns_gym")
 from ns_gym.schedulers import ContinuousScheduler  # noqa: E402
@@ -70,11 +70,11 @@ def test_non_stationary_cartpole() -> None:
         max_episode_steps=500,
         env_fn=_make_ns_cartpole,
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        outputs, _metrics = env.step(env.sample_random_inputs())
+        [(outputs, _metrics)] = env.step(env.sample_random_inputs())
         for _ in range(3):
-            outputs, _metrics = env.step(env.sample_random_inputs())
+            [(outputs, _metrics)] = env.step(env.sample_random_inputs())
         assert "ns_params" in outputs[0]
         assert "length" in outputs[0]["ns_params"]
         assert "observation" in outputs[0]

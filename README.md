@@ -39,7 +39,7 @@ source scripts/install.sh
 Build an env, sample inputs, and keep stepping:
 
 ```python
-from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_env
 
 cfg = EnvConfig(
     id="CartPole-v1",
@@ -47,11 +47,11 @@ cfg = EnvConfig(
     num_envs=4,
     max_episode_steps=500,
 )
-env = make_vector_env(cfg)
+env = make_env(cfg)
 
 for _ in range(1000):
-    inputs = env.sample_random_inputs()
-    outputs, metrics = env.step(inputs)
+    inputs_per_env = env.sample_random_inputs()
+    [(outputs, metrics)] = env.step(inputs_per_env)
 
 env.close()
 ```
@@ -127,11 +127,11 @@ Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `name` if set, otherwise `id`, is used as the base for `env.names`, and `max_episode_steps` is still required (for reward normalisation); `kwargs`, `render`, and the internal `max_episode_steps` time limit are left to your factory.
 
 ```python
-def make_env():
+def make_cartpole():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)  # apply any Gymnasium wrappers here
 
-cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_env)
+cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_cartpole)
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.

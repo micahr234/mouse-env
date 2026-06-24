@@ -106,52 +106,8 @@ class RolloutMetrics(TypedDict):
     episode_length: list[float]
 
 
-class MouseVectorEnv:
-    """Wraps a Gymnasium vector env and returns (outputs, metrics).
-
-    ``names`` identifies the sub-envs by vector index. ``name`` returns the first
-    name, which is convenient for ``num_envs == 1``. ``outputs`` is a list of length
-    ``num_envs``. Each ``outputs[i]`` is a dict containing the full per-step record
-    for environment ``i``.
-
-    Call ``step()`` only — there is no public ``reset()``. The first ``step()`` after
-    construction performs an internal reset and returns initial observations with the
-    configured reset-frame ``reward`` and ``done == 0``; inputs passed on that call
-    are ignored.
-    Subsequent ``step()`` calls apply inputs normally. Finished sub-envs are
-    auto-reset by the inner ``SyncVectorEnv`` (``AutoresetMode.NEXT_STEP``) on the
-    next step; that autoreset frame uses the configured reset reward and ``done == 0``,
-    like the initial reset. Episode boundaries appear as non-zero ``done`` on the
-    terminal transition.
-
-    Every ``outputs[i]`` contains:
-        time (int64 tensor)       — step index within the episode (0-based)
-        observation (tensor)      — the observation tensor; dtype and shape described
-                                    by ``env.output_spec.observation``; absent for
-                                    ``Dict`` observation spaces (subspace keys appear
-                                    directly on the output dict instead)
-        reward (float32 tensor)   — raw per-step reward; reset default on reset frames
-        done (int64 tensor)       — 0=running, 1=terminated, 2=truncated; 0 on reset frames
-        episode_index (int)       — episode counter for this parallel env
-        reward_episodic (float)   — normalised training signal; 0.0 on reset frames
-        q_star (optional)         — float64[action_dim] expert Q-values when configured
-        ns_params (optional)      — surfaced when an env wrapper sets info["ns_params"]
-
-    Inputs are flat dicts: each ``inputs[i]`` has a single ``"action"`` key holding
-    a tensor. Use ``env.input_spec.action`` to find the expected dtype and shape.
-
-    Introspect the full output and input contracts via ``env.output_spec`` and
-    ``env.input_spec``, which are :class:`OutputSpec` and :class:`InputSpec`
-    dataclasses with one :class:`FieldSpec` attribute per dict key.
-
-    ``metrics`` uses the same env index as ``outputs`` (``metrics[i]``):
-        episode_cum_reward: list[float]   — empty unless env ``i`` finished on this step
-        episode_length:     list[float]   — one value per finish on this step
-
-    ``time`` is 0-based within the episode. Internal ``info["episode_time"]`` from
-    ``EpisodeTrackingWrapper`` is 1-based after the first real step; ``MouseVectorEnv``
-    maps this at the public boundary. Initial reset records have ``time == 0``.
-    """
+class _InnerEnv:
+    """Internal: wraps a single Gymnasium VectorEnv with the Mouse step protocol."""
 
     def __init__(
         self,
@@ -248,10 +204,6 @@ class MouseVectorEnv:
         return self._env.num_envs
 
     @property
-    def name(self) -> str:
-        return self._names[0]
-
-    @property
     def names(self) -> tuple[str, ...]:
         return self._names
 
@@ -275,12 +227,10 @@ class MouseVectorEnv:
 
     @property
     def output_spec(self) -> OutputSpec:
-        """Spec describing every field returned in each ``outputs[i]`` dict."""
         return self._output_spec
 
     @property
     def input_spec(self) -> InputSpec:
-        """Spec describing every field expected in each ``inputs[i]`` dict."""
         return self._input_spec
 
     def _has_q_star_wrapper(self) -> bool:
@@ -310,12 +260,7 @@ class MouseVectorEnv:
         return inputs
 
     def step(self, inputs: list[dict]) -> tuple[list[dict], list[dict]]:
-        """Step all envs; return ``(outputs, metrics)``.
-
-        On the first call after construction, performs an internal reset and returns
-        initial observations (inputs are ignored). Otherwise applies ``inputs`` to
-        all parallel envs.
-        """
+        """Step all parallel slots; return ``(outputs, metrics)``."""
         if self._needs_initial_reset:
             self._needs_initial_reset = False
             obs, info = self._env.reset()
@@ -326,11 +271,7 @@ class MouseVectorEnv:
             return self._build_records(obs, info, reward=reward, is_reset=False)
 
     def render(self) -> list:
-        """Return rendered frames from all sub-envs.
-
-        Requires the env to be created with ``render_mode="rgb_array"`` (pass via
-        ``EnvConfig.kwargs``). Returns a list of one numpy array per sub-env.
-        """
+        """Return rendered frames from all parallel slots."""
         frames = self._env.render()
         if frames is None:
             return []
@@ -342,11 +283,7 @@ class MouseVectorEnv:
         self._env.close()
 
     def _require_input(self, input_record: Any, index: int) -> np.ndarray:
-        """Extract and validate the ``"action"`` key from an input dict.
-
-        Each ``inputs[i]`` must be a dict with a single ``"action"`` key holding
-        a tensor or array; a non-dict or missing key is rejected.
-        """
+        """Extract and validate the ``"action"`` key from an input dict."""
         if not isinstance(input_record, dict):
             raise ValueError(
                 f"inputs[{index}] must be a dict with an '{ACTION_KEY}' entry, "
@@ -379,16 +316,7 @@ class MouseVectorEnv:
         return raw.reshape((self.num_envs, *(getattr(space, "shape", ()) or ())))
 
     def _obs_for_index(self, obs: Any, i: int) -> dict[str, torch.Tensor]:
-        """Build observation field(s) for env index ``i``.
-
-        For ``Dict`` observation spaces the original subspace keys are placed directly
-        on the output dict. For all other spaces a single ``"observation"`` key is used.
-
-        Dtypes come from the schema recorded at construction (:meth:`_build_specs`),
-        derived from the observation space. Observations keep their native shape:
-        image channels stay 2-D/3-D, continuous channels stay 1-D, and discrete
-        channels stay scalar. No flattening is applied.
-        """
+        """Build observation field(s) for slot index ``i``."""
         if isinstance(obs, dict):
             return {
                 k: torch.tensor(np.asarray(v[i]), dtype=self._obs_dtypes[k])
@@ -490,3 +418,104 @@ class MouseVectorEnv:
 
         metrics = self._build_metrics(info, empty_episode_stats=is_reset)
         return outputs, metrics
+
+
+class MouseEnv:
+    """A sequential list of environments, each built from one :class:`EnvConfig`.
+
+    Use :func:`mouse_envs.make_env` with a single :class:`EnvConfig` or a
+    ``list[EnvConfig]`` to construct. A single-config call is the degenerate case
+    with one inner env.
+
+    ``step`` and ``sample_random_inputs`` always use a nested structure indexed by
+    env. ``inputs_per_env[i]`` is the ``list[dict]`` for the i-th inner env.
+    ``step`` returns ``[(outputs, metrics), ...]``, one tuple per inner env.
+
+    Each inner env's parallel slots are stepped by a ``SyncVectorEnv``; the inner
+    envs are iterated sequentially. There is no public ``reset()`` — call ``step()``
+    only. The first ``step()`` performs an internal reset for each inner env.
+
+    Call ``step()`` only — there is no public ``reset()``. The first ``step()`` after
+    construction performs an internal reset and returns initial observations with the
+    configured reset-frame ``reward`` and ``done == 0``; inputs on that call are
+    ignored.
+
+    Every ``outputs[i]`` (within one inner env's result) contains:
+        time (int64 tensor)       — step index within the episode (0-based)
+        observation (tensor)      — the observation tensor
+        reward (float32 tensor)   — raw per-step reward
+        done (int64 tensor)       — 0=running, 1=terminated, 2=truncated
+        episode_index (int)       — episode counter for this parallel slot
+        reward_episodic (float)   — normalised training signal
+        q_star (optional)         — float64[action_dim] expert Q-values when configured
+        ns_params (optional)      — surfaced when an env wrapper sets info["ns_params"]
+
+    Introspect the full output and input contracts via ``env.output_specs[i]`` and
+    ``env.input_specs[i]``, which are :class:`OutputSpec` and :class:`InputSpec`
+    dataclasses.
+    """
+
+    def __init__(self, inner_envs: list[_InnerEnv]) -> None:
+        if not inner_envs:
+            raise ValueError("MouseEnv requires at least one inner env.")
+        self._inners = inner_envs
+
+    @property
+    def num_envs(self) -> int:
+        """Total parallel slots across all inner envs."""
+        return sum(e.num_envs for e in self._inners)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """All env slot names, flattened across inner envs."""
+        result: list[str] = []
+        for e in self._inners:
+            result.extend(e.names)
+        return tuple(result)
+
+    @property
+    def output_specs(self) -> list[OutputSpec]:
+        """One :class:`OutputSpec` per inner env."""
+        return [e.output_spec for e in self._inners]
+
+    @property
+    def input_specs(self) -> list[InputSpec]:
+        """One :class:`InputSpec` per inner env."""
+        return [e.input_spec for e in self._inners]
+
+    def sample_random_inputs(self) -> list[list[dict]]:
+        """Sample random inputs for every inner env.
+
+        Returns ``list[list[dict]]`` — the outer list is indexed by inner env,
+        the inner list by parallel slot. Pass the result directly to ``step()``.
+        """
+        return [e.sample_random_inputs() for e in self._inners]
+
+    def step(
+        self, inputs_per_env: list[list[dict]]
+    ) -> list[tuple[list[dict], list[dict]]]:
+        """Step all inner envs sequentially.
+
+        ``inputs_per_env[i]`` is the input ``list[dict]`` for the i-th inner env
+        (one dict per parallel slot). Returns ``[(outputs, metrics), ...]``, one
+        tuple per inner env — outputs are never concatenated across envs.
+        """
+        return [
+            e.step(inputs)
+            for e, inputs in zip(self._inners, inputs_per_env)
+        ]
+
+    def render(self) -> list:
+        """Return rendered frames from all inner envs, flattened into one list.
+
+        Requires ``render_mode="rgb_array"`` (pass via ``EnvConfig.kwargs``).
+        """
+        frames: list = []
+        for e in self._inners:
+            frames.extend(e.render())
+        return frames
+
+    def close(self) -> None:
+        """Close all inner envs."""
+        for e in self._inners:
+            e.close()

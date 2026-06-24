@@ -1,4 +1,4 @@
-"""Build vector environments from :class:`EnvConfig`."""
+"""Build environments from :class:`EnvConfig`."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ import gymnasium as gym
 from mouse_envs.config import EnvConfig
 from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
 from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
-from mouse_envs.format import MouseVectorEnv
+from mouse_envs.format import MouseEnv, _InnerEnv
 from mouse_envs.wrappers import (
     ConstructionSeedWrapper,
     ObservationSliceWrapper,
-    build_vector_env_stack,
+    build_env_stack,
 )
 
 
@@ -35,8 +35,37 @@ def _resolve_names(name_base: str, num_envs: int) -> list[str]:
     return [f"{name_base}#{i}" for i in range(num_envs)]
 
 
-def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
-    """Create a vector env from :class:`EnvConfig`."""
+def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
+    """Create a :class:`MouseEnv` from one or more :class:`EnvConfig` objects.
+
+    Pass a single :class:`EnvConfig` for the common single-env case, or a list to
+    combine multiple heterogeneous environments into one :class:`MouseEnv`. Envs are
+    stepped sequentially; outputs are never concatenated across configs.
+
+    Usage — single env::
+
+        env = make_env(EnvConfig(id="CartPole-v1", seed=0, num_envs=4, max_episode_steps=500))
+        for _ in range(1000):
+            [(outputs, metrics)] = env.step(env.sample_random_inputs())
+
+    Usage — multiple envs::
+
+        env = make_env([
+            EnvConfig(id="CartPole-v1", seed=0, num_envs=4, max_episode_steps=500),
+            EnvConfig(id="MountainCar-v0", seed=1, num_envs=2, max_episode_steps=200),
+        ])
+        for _ in range(1000):
+            results = env.step(env.sample_random_inputs())
+            for outputs, metrics in results:
+                ...
+    """
+    if isinstance(configs, EnvConfig):
+        configs = [configs]
+    inner_envs = [_make_inner_env(cfg) for cfg in configs]
+    return MouseEnv(inner_envs)
+
+
+def _make_inner_env(config: EnvConfig) -> _InnerEnv:
     if config.max_episode_steps is None:
         raise ValueError(
             "max_episode_steps is required (used to normalise xformed_reward). "
@@ -58,11 +87,7 @@ def make_vector_env(config: EnvConfig) -> MouseVectorEnv:
         resolved_q_star_source=resolved_q_star_source,
     )
 
-    return MouseVectorEnv(
-        gym_env,
-        resolved_names,
-        reset_reward=config.reset_reward,
-    )
+    return _InnerEnv(gym_env, resolved_names, reset_reward=config.reset_reward)
 
 
 def _prepare_plain_env_kwargs(config: EnvConfig) -> dict[str, Any]:
@@ -142,7 +167,7 @@ def _build_plain_vector_env(
         for i in range(config.num_envs)
     ]
 
-    return build_vector_env_stack(
+    return build_env_stack(
         env_fns=env_fns,
         env_id=config.id,
         name=resolved_name,

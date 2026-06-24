@@ -1,11 +1,11 @@
-"""MOUSE environments — vector envs and rollout formatting for mouse-core."""
+"""MOUSE environments — environments and rollout formatting for mouse-core."""
 
-from mouse_envs.build import make_vector_env
+from mouse_envs.build import make_env
 from mouse_envs.config import EnvConfig
 from mouse_envs.format import (
     FieldSpec,
     InputSpec,
-    MouseVectorEnv,
+    MouseEnv,
     OutputSpec,
     RolloutMetrics,
     StepOutput,
@@ -15,8 +15,8 @@ __all__ = [
     "EnvConfig",
     "FieldSpec",
     "InputSpec",
-    "make_vector_env",
-    "MouseVectorEnv",
+    "make_env",
+    "MouseEnv",
     "OutputSpec",
     "RolloutMetrics",
     "StepOutput",

@@ -11,7 +11,7 @@ OBSERVATION_KINDS = ("continuous", "discrete", "image")
 
 @dataclass
 class EnvConfig:
-    """Configuration for building a vector environment via :func:`mouse_envs.make_vector_env`."""
+    """Configuration for building an environment via :func:`mouse_envs.make_env`."""
 
     id: str
     seed: int

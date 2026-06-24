@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 
-from mouse_envs import EnvConfig, make_vector_env
+from mouse_envs import EnvConfig, make_env
 
 ale_py = pytest.importorskip("ale_py")
 pytest.importorskip("gymnasium.wrappers.atari_preprocessing")
@@ -42,10 +42,10 @@ def test_atari_vector_preprocessing() -> None:
             500, preprocess_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 0}
         ),
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        assert env.obs_key == "observation_image"
-        outputs, metrics = env.step(env.sample_random_inputs())
+        assert env._inners[0].obs_key == "observation_image"
+        [(outputs, metrics)] = env.step(env.sample_random_inputs())
         assert len(outputs) == 2
         assert len(metrics) == 2
         assert "id" in outputs[0]
@@ -54,8 +54,8 @@ def test_atari_vector_preprocessing() -> None:
         assert batch.shape == (2, 84, 84)
         assert batch.dtype == np.float32
 
-        assert env.output_spec.observation.shape == (84, 84)
-        assert env.output_spec.observation.dtype == torch.float32
+        assert env.output_specs[0].observation.shape == (84, 84)
+        assert env.output_specs[0].observation.dtype == torch.float32
 
         for r in outputs:
             assert r["time"].item() == 0
@@ -74,10 +74,10 @@ def test_atari_multi_step_rollout() -> None:
         observation_kind="image",
         env_fn=_pong_factory(500, preprocess_kwargs={"noop_max": 0}),
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
         env.step(env.sample_random_inputs())
-        outputs, _metrics = env.step(env.sample_random_inputs())
+        [(outputs, _metrics)] = env.step(env.sample_random_inputs())
         assert outputs[0]["time"].item() >= 1
         assert "observation" in outputs[0]
         assert outputs[0]["observation"].dtype == torch.float32
@@ -94,13 +94,13 @@ def test_atari_discrete_action_sampling() -> None:
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs={"noop_max": 0}),
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        inputs = env.sample_random_inputs()
-        assert len(inputs) == 1
-        assert "action" in inputs[0]
-        assert inputs[0]["action"].dtype == torch.int64
-        assert env.input_spec.action.dtype == torch.int64
+        inputs_per_env = env.sample_random_inputs()
+        assert len(inputs_per_env[0]) == 1
+        assert "action" in inputs_per_env[0][0]
+        assert inputs_per_env[0][0]["action"].dtype == torch.int64
+        assert env.input_specs[0].action.dtype == torch.int64
     finally:
         env.close()
 
@@ -114,12 +114,12 @@ def test_atari_without_preprocessing() -> None:
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs=None),
     )
-    env = make_vector_env(cfg)
+    env = make_env(cfg)
     try:
-        outputs, _metrics = env.step(env.sample_random_inputs())
+        [(outputs, _metrics)] = env.step(env.sample_random_inputs())
         # Raw ALE frames are RGB; observation keeps its native (210, 160, 3) shape.
         img = outputs[0]["observation"]
         assert tuple(img.shape) == (210, 160, 3)
-        assert env.output_spec.observation.shape == (210, 160, 3)
+        assert env.output_specs[0].observation.shape == (210, 160, 3)
     finally:
         env.close()

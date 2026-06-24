@@ -374,7 +374,7 @@ class ConstructionSeedWrapper(gym.Wrapper):
 # -----------------------------------------------------------------------------
 
 
-def build_vector_env_stack(
+def build_env_stack(
     env_fns: list,
     env_id: str,
     name: str,
@@ -385,7 +385,7 @@ def build_vector_env_stack(
     reward_shift: float = 0.0,
     q_star_source: dict[str, Any] | None = None,
 ) -> gym.vector.VectorEnv:
-    """Compose the standard vector-env wrapper stack around a ``SyncVectorEnv``."""
+    """Compose the standard env wrapper stack around a ``SyncVectorEnv``."""
     env: gym.vector.VectorEnv = SyncVectorEnv(
         env_fns,
         copy=True,
