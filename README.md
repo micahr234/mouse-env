@@ -117,7 +117,7 @@ This keeps the rollout stream uniform while still making both episode and task s
 
 Pass any Gymnasium environment id as `id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
 
-Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `#0`, `#1`, and so on. `env.name` returns the first name for single-env use. Step outputs do not repeat this name on every record.
+Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `_0`, `_1`, and so on. `env.name` returns the first name for single-env use. Step outputs do not repeat this name on every record.
 
 mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 

@@ -80,7 +80,7 @@ def _make_slots(config: EnvConfig) -> list[_Slot]:
 
     slots: list[_Slot] = []
     for i in range(config.num_envs):
-        name = f"{name_base}#{i}"
+        name = f"{name_base}_{i}"
         slot_seed = config.seed + i
 
         env = build_single_env(

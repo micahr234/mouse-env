@@ -29,8 +29,8 @@ def test_cartpole_step_contract() -> None:
     try:
         outputs = _rollout(env)
         assert len(outputs) == 3
-        assert env.names[0] == "train-cartpole#0"
-        assert env.names == ("train-cartpole#0", "train-cartpole#1", "train-cartpole#2")
+        assert env.names[0] == "train-cartpole_0"
+        assert env.names == ("train-cartpole_0", "train-cartpole_1", "train-cartpole_2")
         sampled = env.sample_random_inputs()
         assert "action" in sampled[0]
         assert sampled[0]["action"].ndim == 0
@@ -330,7 +330,7 @@ def test_env_fn_factory() -> None:
     try:
         outputs = _rollout(env, steps=2)
         assert len(outputs) == 2
-        assert env.names == ("CartPole-custom#0", "CartPole-custom#1")
+        assert env.names == ("CartPole-custom_0", "CartPole-custom_1")
         obs = outputs[0]["observation"].numpy()
         assert np.all(obs == 0.0)
     finally:
