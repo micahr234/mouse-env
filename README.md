@@ -1,6 +1,6 @@
 # MOUSE Environments 🐭
 
-<p align="center"><img src="https://raw.githubusercontent.com/micahr234/mouse-env/main/docs/mouse-env.png" width="400"/></p>
+<p align="center"><img src="https://raw.githubusercontent.com/micahr234/mouse-env/main/mouse-env.png" width="400"/></p>
 
 > **Warning:** MOUSE is in early development and is not yet ready for production use. APIs may change without notice.
 
@@ -8,13 +8,13 @@
 
 Most RL benchmarks are episodic: an agent acts until termination or truncation, the caller calls `reset()`, and a new trial begins. That is a good interface when each episode is an independent sample. It is less natural when the experiment studies behavior **across multiple episodes**, where what the agent observes or discovers in one episode can affect what it does in a later one.
 
-You can stitch episodes together on top of Gymnasium yourself, but the result is usually ad hoc. Important choices become arbitrary: whether reset observations are kept, how episode boundaries are marked, and how rewards behave at the boundary. **mouse-env** makes the episode-to-continuing conversion explicit and consistent in three ways:
+You can stitch episodes together on top of Gymnasium yourself, but the result is usually ad hoc. Important choices become arbitrary: whether reset observations are kept, how episode boundaries are marked, and when an RL algorithm should bootstrap. **mouse-env** makes the episode-to-continuing conversion explicit and consistent in three ways:
 
 * **Reset-free rollout.** Users keep calling `step(inputs)`. When an episode ends, mouse-env resets the underlying environment internally and returns the next observation without requiring a public `reset()` call.
 * **Visible episode structure.** Terminations, truncations, and reset frames stay in the data returned by the environment, so agents and analysis code can see where one episode ended and the next began.
-* **Cross-episode friendly rewards.** In episodic RL, credit is cut off at the reset boundary. A reward in the next episode does not encourage useful behavior in the previous one. mouse-env keeps raw environment rewards available, and also exposes a transformed reward signal that allows credit to pass across resets.
+* **Task-level boundaries.** In episodic RL, credit is cut off at the reset boundary. mouse-env introduces a task level — a group of N consecutive episodes — and signals task boundaries with distinct `done` codes. The RL algorithm bootstraps at task end, not at each episode reset, so value can propagate freely across the episodes within a task.
 
-The result is a continuing interface for episodic RL: ordinary episodic Gymnasium environments can generate reset-free trajectories for multi-episode problems, with visible episode boundaries and rewards that allow value to propagate across trials.
+The result is a continuing interface for episodic RL: ordinary episodic Gymnasium environments generate reset-free trajectories, with visible episode boundaries inside each task and explicit task boundaries that tell the algorithm when to cut credit.
 
 ---
 
@@ -45,18 +45,32 @@ cfg = EnvConfig(
     id="CartPole-v1",
     seed=0,
     num_envs=4,
-    max_episode_steps=500,
+    episodes_per_task=5,
 )
 env = make_env(cfg)
 
 for _ in range(1000):
-    inputs_per_env = env.sample_random_inputs()
-    [(outputs, metrics)] = env.step(inputs_per_env)
+    inputs = env.sample_random_inputs()
+    outputs = env.step(inputs)
 
+# Episode stats accumulate in env.tracker automatically
+print(env.tracker.episode_cum_rewards)  # list[list[float]] — per slot
 env.close()
 ```
 
-See **[docs/guide.md](docs/guide.md)** for full field-level documentation, plus runnable notebooks in [`examples/`](examples/).
+Runnable notebooks in [`examples/`](examples/) cover every feature with worked code and explanations:
+
+| Notebook | What it covers |
+|----------|----------------|
+| [01 — Random rollout](examples/01_random_rollout.ipynb) | End-to-end loop; output fields; `done` codes; reset frames; `EnvConfig`; `input_specs`/`output_specs`; tracker |
+| [02 — Expert Q-values](examples/02_q_star_expert.ipynb) | `q_star_source`; `hf_q_table` provider; value iteration; greedy expert rollout |
+| [03 — Non-stationary env](examples/03_ns_gym_oscillating.ipynb) | `env_fn` factory pattern; NS-Gym adapter; `ns_params` in outputs |
+| [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; `observation_kind="image"` |
+| [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
+| [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
+| [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `metadata_q_star`; tabular experiments |
+| [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env slot names |
+| [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
 
 ---
 
@@ -66,27 +80,36 @@ There is no public rollout-time `reset()` call. The first `step()` quietly perfo
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
-Each call returns two objects:
+`step()` returns a single flat `list[dict]` of **outputs** — one entry per slot. Each output dict contains model-visible training data: an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields.
 
-* **`outputs`** — model-visible training data, including an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields
-* **`metrics`** — logging data, such as true episodic return and episode length, emitted when episodes end
+`inputs` is a flat `list[dict]` — one dict per slot, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for slot `i`; use `env.output_specs[i]` for the full output contract.
 
-`inputs` are plain dictionaries with a single `"action"` tensor key. Use `env.input_spec` to discover the expected dtype and shape for the current env. Use `env.output_spec` to discover the dtype and shape of every field in the output dict.
+**Episode statistics** are kept separate from the per-step stream and are accumulated automatically in `env.tracker` (a `MetricsTracker`):
 
-Episode boundaries are represented by integer-coded `done` values:
+```python
+env.tracker.episode_cum_rewards   # list[list[float]] — per-slot raw cumulative returns
+env.tracker.episode_lengths       # list[list[float]] — per-slot episode step counts
+env.tracker.clear()               # wipe accumulated data between evaluation runs
+```
 
-* `0` = running
-* `1` = terminated
-* `2` = truncated
+Boundaries are represented by integer-coded `done` values:
+
+* `0` = running (normal step or reset frame)
+* `1` = episode terminated naturally
+* `2` = episode truncated by time limit
+* `3` = episode terminated naturally, and this was the last episode in the task
+* `4` = episode truncated, and this was the last episode in the task
+
+Codes 1 and 2 indicate how an episode ended. Codes 3 and 4 carry the same episode-end meaning but additionally mark a task boundary. The RL algorithm bootstraps at codes 3 or 4 and treats codes 1 and 2 as interior dynamics — value keeps propagating forward through those episode resets. `episodes_per_task` in `EnvConfig` sets how many episodes make up one task.
 
 Reset frames are ordinary `outputs` records with:
 
-* the first observation of the new episode
+* the first observation of the new episode (or new task)
 * `time=0`
 * the configured `reset_reward`, which is `0` by default
 * `done=0`
 
-This keeps the rollout stream uniform while still making episode structure explicit.
+This keeps the rollout stream uniform while still making both episode and task structure explicit.
 
 ---
 
@@ -102,7 +125,7 @@ mouse-env also includes a couple of custom environments. Other envs that need th
 
 * **ID:** `Procedural-FrozenLake-v1`
 * Random valid grid generation: size, holes, start/goal, and optional per-goal rewards.
-* Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
+* Example: [examples/09_procedural_frozenlake.ipynb](examples/09_procedural_frozenlake.ipynb)
 
 ### Synthetic Environment
 
@@ -124,14 +147,14 @@ Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Bring your own env (`env_fn`)
 
-Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `name` if set, otherwise `id`, is used as the base for `env.names`, and `max_episode_steps` is still required (for reward normalisation); `kwargs`, `render`, and the internal `max_episode_steps` time limit are left to your factory.
+Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `name` if set, otherwise `id`, is used as the base for `env.names`. Time-limit truncation and any other wrappers are left entirely to your factory.
 
 ```python
 def make_cartpole():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)  # apply any Gymnasium wrappers here
 
-cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, max_episode_steps=500, env_fn=make_cartpole)
+cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, episodes_per_task=5, env_fn=make_cartpole)
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.
@@ -148,9 +171,15 @@ Example: [examples/05_partial_observability.ipynb](examples/05_partial_observabi
 
 ### Reward shaping
 
-Use `reward_scale` and `reward_shift`; the normalized training signal appears in `outputs[i]["reward_episodic"]`.
+Use `reward_scale` and `reward_shift` to scale and shift the raw per-step reward before it appears in `outputs[i]["reward"]`. The formula is `reward = raw × scale + shift`.
 
 Example: [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb)
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a record of notable changes.
 
 ---
 

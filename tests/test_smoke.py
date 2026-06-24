@@ -10,11 +10,11 @@ import torch
 from mouse_envs import EnvConfig, FieldSpec, InputSpec, OutputSpec, make_env
 
 
-def _rollout(env, steps: int = 5) -> tuple[list, list]:
-    [(outputs, metrics)] = env.step(env.sample_random_inputs())
+def _rollout(env, steps: int = 5) -> list:
+    outputs = env.step(env.sample_random_inputs())
     for _ in range(steps - 1):
-        [(outputs, metrics)] = env.step(env.sample_random_inputs())
-    return outputs, metrics
+        outputs = env.step(env.sample_random_inputs())
+    return outputs
 
 
 def test_cartpole_step_contract() -> None:
@@ -23,33 +23,31 @@ def test_cartpole_step_contract() -> None:
         name="train-cartpole",
         seed=0,
         num_envs=3,
-        max_episode_steps=50,
+        episodes_per_task=5,
     )
     env = make_env(cfg)
     try:
-        outputs, metrics = _rollout(env)
+        outputs = _rollout(env)
         assert len(outputs) == 3
-        assert len(metrics) == 3
         assert env.names[0] == "train-cartpole#0"
         assert env.names == ("train-cartpole#0", "train-cartpole#1", "train-cartpole#2")
         sampled = env.sample_random_inputs()
-        assert "action" in sampled[0][0]
-        assert sampled[0][0]["action"].ndim == 0
-        for i, r in enumerate(outputs):
+        assert "action" in sampled[0]
+        assert sampled[0]["action"].ndim == 0
+        for r in outputs:
             assert set(r.keys()) >= {
                 "time",
                 "observation",
                 "reward",
                 "done",
                 "episode_index",
-                "reward_episodic",
+                "task_index",
             }
             assert "id" not in r
             assert "name" not in r
             assert "action" not in r
-            assert metrics[i]["episode_cum_reward"] == [] or isinstance(
-                metrics[i]["episode_cum_reward"][0], float
-            )
+        for per_slot in env.tracker.episode_cum_rewards:
+            assert all(isinstance(v, float) for v in per_slot)
     finally:
         env.close()
 
@@ -59,7 +57,7 @@ def test_output_spec_and_input_spec_cartpole() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
     )
     env = make_env(cfg)
     try:
@@ -78,7 +76,7 @@ def test_output_spec_and_input_spec_cartpole() -> None:
         assert ospec.reward.dtype == torch.float32
         assert ospec.done.dtype == torch.int64
         assert ospec.episode_index.dtype == int
-        assert ospec.reward_episodic.dtype == float
+        assert ospec.task_index.dtype == int
         assert ospec.q_star is None
         assert ospec.ns_params is None
 
@@ -94,7 +92,7 @@ def test_output_spec_frozenlake_with_q_star() -> None:
         id="Procedural-FrozenLake-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={"provider": "metadata_q_star"},
     )
     env = make_env(cfg)
@@ -115,13 +113,13 @@ def test_pendulum_continuous_step_contract() -> None:
         id="Pendulum-v1",
         seed=0,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
     )
     env = make_env(cfg)
     try:
         assert env.input_specs[0].action.shape == (1,)
         sampled = env.sample_random_inputs()
-        action = sampled[0][0]
+        action = sampled[0]
         assert "action" in action
         assert action["action"].dtype == torch.float32
         assert action["action"].ndim == 0
@@ -129,7 +127,7 @@ def test_pendulum_continuous_step_contract() -> None:
         assert env.input_specs[0].action.dtype == torch.float32
         assert env.output_specs[0].observation.dtype == torch.float32
 
-        outputs, metrics = _rollout(env)
+        outputs = _rollout(env)
         assert len(outputs) == 2
         for r in outputs:
             assert "observation" in r
@@ -143,15 +141,15 @@ def test_action_input_contract_is_enforced() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
     )
     env = make_env(cfg)
     try:
-        env.step(env.sample_random_inputs())  # initial reset frame
-        not_a_dict = [[torch.tensor(0)]]
+        env.step(env.sample_random_inputs())
+        not_a_dict = [torch.tensor(0)]
         with pytest.raises(ValueError, match="must be a dict"):
             env.step(not_a_dict)
-        missing_key = [[{"wrong": torch.tensor(0)}]]
+        missing_key = [{"wrong": torch.tensor(0)}]
         with pytest.raises(ValueError, match="action"):
             env.step(missing_key)
     finally:
@@ -186,12 +184,12 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
         id="DictObs",
         seed=0,
         num_envs=1,
-        max_episode_steps=10,
+        episodes_per_task=5,
         env_fn=lambda: DictObsEnv(),
     )
     env = make_env(cfg)
     try:
-        outputs, _metrics = _rollout(env, steps=2)
+        outputs = _rollout(env, steps=2)
         # Float subspace -> float32; integer subspace -> int64, regardless of key name.
         assert outputs[0]["pos"].dtype == torch.float32
         assert outputs[0]["tile"].dtype == torch.int64
@@ -210,12 +208,12 @@ def test_procedural_frozenlake_vector() -> None:
         id="Procedural-FrozenLake-v1",
         seed=0,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={"provider": "metadata_q_star"},
     )
     env = make_env(cfg)
     try:
-        outputs, metrics = _rollout(env)
+        outputs = _rollout(env)
         assert len(outputs) == 2
         assert "q_star" in outputs[0]
         assert outputs[0]["q_star"].shape == (4,)
@@ -231,12 +229,12 @@ def test_synthetic_vector() -> None:
         id="SyntheticEnv-v1",
         seed=0,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={"provider": "metadata_q_star"},
     )
     env = make_env(cfg)
     try:
-        outputs, _metrics = _rollout(env)
+        outputs = _rollout(env)
         assert len(outputs) == 2
         assert "q_star" in outputs[0]
         for r in outputs:
@@ -250,12 +248,12 @@ def test_partial_observability() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         observation_indices=[0, 2],
     )
     env = make_env(cfg)
     try:
-        outputs, _metrics = _rollout(env, steps=2)
+        outputs = _rollout(env, steps=2)
         obs = outputs[0]["observation"]
         assert obs.shape == (2,)
         assert env.output_specs[0].observation.shape == (2,)
@@ -268,29 +266,29 @@ def test_reset_frame_contract() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         reset_reward=-1.0,
     )
     env = make_env(cfg)
     try:
-        [(outputs, metrics)] = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_inputs())
         assert outputs[0]["time"].item() == 0
         assert "action" not in outputs[0]
         assert outputs[0]["reward"].item() == -1.0
         assert outputs[0]["done"].item() == 0
-        assert outputs[0]["reward_episodic"] == 0.0
-        assert metrics[0]["episode_cum_reward"] == []
+        assert outputs[0]["task_index"] == 0
+        assert env.tracker.episode_cum_rewards[0] == []
     finally:
         env.close()
 
 
-def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, list, int]:
-    [(outputs, metrics)] = env.step(env.sample_random_inputs())
+def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, int]:
+    outputs = env.step(env.sample_random_inputs())
     for step in range(1, max_steps):
         prev_time = outputs[0]["time"].item()
-        [(outputs, metrics)] = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_inputs())
         if outputs[0]["time"].item() == 0 and prev_time > 0:
-            return outputs, metrics, step
+            return outputs, step
     raise AssertionError(f"no autoreset frame within {max_steps} steps")
 
 
@@ -299,18 +297,17 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         reward_scale=0.5,
         reward_shift=1.0,
     )
     env = make_env(cfg)
     try:
-        outputs, metrics, _step = _roll_until_autoreset(env)
+        outputs, _step = _roll_until_autoreset(env)
         assert outputs[0]["time"].item() == 0
         assert outputs[0]["reward"].item() == 0.0
         assert outputs[0]["done"].item() == 0
-        assert outputs[0]["reward_episodic"] == 0.0
-        assert metrics[0]["episode_cum_reward"] == []
+        assert len(env.tracker.episode_cum_rewards[0]) >= 1
     finally:
         env.close()
 
@@ -326,12 +323,12 @@ def test_env_fn_factory() -> None:
         id="CartPole-custom",
         seed=0,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
         env_fn=make_cartpole,
     )
     env = make_env(cfg)
     try:
-        outputs, _metrics = _rollout(env, steps=2)
+        outputs = _rollout(env, steps=2)
         assert len(outputs) == 2
         assert env.names == ("CartPole-custom#0", "CartPole-custom#1")
         obs = outputs[0]["observation"].numpy()
@@ -345,26 +342,84 @@ def test_observation_kind_override() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         observation_kind="discrete",
     )
     env = make_env(cfg)
     try:
-        assert env._inners[0].obs_key == "observation_discrete"
-        outputs, _metrics = _rollout(env, steps=2)
+        assert env._slots[0].obs_key == "observation_discrete"
+        outputs = _rollout(env, steps=2)
         assert "observation" in outputs[0]
         assert env.output_specs[0].observation.dtype == torch.int64
     finally:
         env.close()
 
 
-def test_make_env_requires_max_steps() -> None:
-    with pytest.raises(ValueError, match="max_episode_steps"):
-        make_env(
-            EnvConfig(
-                id="CartPole-v1",
-                seed=0,
-                num_envs=1,
-                max_episode_steps=None,
-            )
-        )
+def test_task_done_codes_fire_at_task_boundary() -> None:
+    from mouse_envs.format import DONE_EPISODE_TERMINATED, DONE_EPISODE_TRUNCATED, DONE_TASK_TERMINATED, DONE_TASK_TRUNCATED
+
+    cfg = EnvConfig(
+        id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        episodes_per_task=2,
+        kwargs={"max_episode_steps": 10},
+    )
+    env = make_env(cfg)
+    try:
+        episode_dones: list[int] = []
+        task_dones: list[int] = []
+        for _ in range(300):
+            outputs = env.step(env.sample_random_inputs())
+            done = int(outputs[0]["done"].item())
+            if done in (DONE_EPISODE_TERMINATED, DONE_EPISODE_TRUNCATED):
+                episode_dones.append(done)
+            elif done in (DONE_TASK_TERMINATED, DONE_TASK_TRUNCATED):
+                task_dones.append(done)
+        # With 2 episodes per task, for every 2 episode-end signals there should be 1 task-end.
+        assert len(task_dones) > 0, "expected some task-done steps within 300 steps"
+        assert len(episode_dones) > 0, "expected some episode-done steps within 300 steps"
+        # task_index increments each time a task boundary is crossed
+        outputs = env.step(env.sample_random_inputs())
+        assert outputs[0]["task_index"] >= 0
+    finally:
+        env.close()
+
+
+def test_tracker_accumulates_and_clears() -> None:
+    from mouse_envs import MetricsTracker
+
+    cfg = EnvConfig(
+        id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        episodes_per_task=5,
+        kwargs={"max_episode_steps": 10},
+    )
+    env = make_env(cfg)
+    try:
+        assert isinstance(env.tracker, MetricsTracker)
+        assert env.tracker.episode_cum_rewards == [[]]
+        assert env.tracker.episode_lengths == [[]]
+
+        # Roll until at least one episode completes
+        for _ in range(200):
+            env.step(env.sample_random_inputs())
+            if env.tracker.episode_cum_rewards[0]:
+                break
+        else:
+            raise AssertionError("no episode completed within 200 steps")
+
+        rewards = env.tracker.episode_cum_rewards[0]
+        lengths = env.tracker.episode_lengths[0]
+        assert len(rewards) >= 1
+        assert len(lengths) == len(rewards)
+        assert all(isinstance(r, float) for r in rewards)
+        assert all(isinstance(l, float) for l in lengths)
+
+        # clear() wipes accumulated data
+        env.tracker.clear()
+        assert env.tracker.episode_cum_rewards == [[]]
+        assert env.tracker.episode_lengths == [[]]
+    finally:
+        env.close()

@@ -16,7 +16,7 @@ class EnvConfig:
     id: str
     seed: int
     num_envs: int
-    max_episode_steps: int | None
+    episodes_per_task: int
     name: str | None = None
     kwargs: dict | None = None
     render: bool = False

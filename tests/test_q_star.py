@@ -18,11 +18,11 @@ from mouse_envs.experts.action_star import (
 )
 
 
-def _rollout(env, steps: int = 3):
-    [(outputs, metrics)] = env.step(env.sample_random_inputs())
+def _rollout(env, steps: int = 3) -> list:
+    outputs = env.step(env.sample_random_inputs())
     for _ in range(steps - 1):
-        [(outputs, metrics)] = env.step(env.sample_random_inputs())
-    return outputs, metrics
+        outputs = env.step(env.sample_random_inputs())
+    return outputs
 
 
 def test_normalize_q_star_source_canonical_providers() -> None:
@@ -61,7 +61,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
         id="Pendulum-v1",
         seed=0,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={
             "provider": "sb3_rl_zoo",
             "algo": "ppo",
@@ -77,7 +77,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
         env = make_env(cfg)
     try:
         assert env.input_specs[0].action.shape == (1,)
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
         # Continuous expert: q_star carries the expert action vector, not one-hot.
         assert q_star.shape == (1,)
@@ -92,12 +92,12 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
         id="Procedural-FrozenLake-v1",
         seed=3,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={"provider": "metadata_q_star"},
     )
     env = make_env(cfg)
     try:
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
@@ -112,13 +112,13 @@ def test_metadata_q_star_synthetic_matches_action_dim() -> None:
         id="SyntheticEnv-v1",
         seed=1,
         num_envs=2,
-        max_episode_steps=50,
+        episodes_per_task=5,
         kwargs={"obs_size": 8, "action_size": 3},
         q_star_source={"provider": "metadata_q_star"},
     )
     env = make_env(cfg)
     try:
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         assert result[0]["q_star"].shape == (3,)
         assert result[1]["q_star"].shape == (3,)
     finally:
@@ -132,7 +132,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         q_star_source={
             "provider": "sb3_rl_zoo",
             "algo": "ppo",
@@ -147,7 +147,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_env(cfg)
     try:
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
         assert q_star.shape == (2,)
         # PPO has no predict_q — wrapper falls back to one-hot expert actions.
@@ -188,7 +188,7 @@ def test_hf_q_table_vector_env_integration(
         id="SyntheticEnv-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
         kwargs={"obs_size": 16, "action_size": 4},
         q_star_source={
             "provider": "hf_q_table",
@@ -202,7 +202,7 @@ def test_hf_q_table_vector_env_integration(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_env(cfg)
     try:
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         q_star = result[0]["q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
@@ -216,11 +216,11 @@ def test_q_star_absent_when_disabled() -> None:
         id="CartPole-v1",
         seed=0,
         num_envs=1,
-        max_episode_steps=50,
+        episodes_per_task=5,
     )
     env = make_env(cfg)
     try:
-        result, _metrics = _rollout(env, steps=2)
+        result = _rollout(env, steps=2)
         assert "q_star" not in result[0]
     finally:
         env.close()

@@ -5,9 +5,9 @@ from mouse_envs.config import EnvConfig
 from mouse_envs.format import (
     FieldSpec,
     InputSpec,
+    MetricsTracker,
     MouseEnv,
     OutputSpec,
-    RolloutMetrics,
     StepOutput,
 )
 
@@ -16,8 +16,8 @@ __all__ = [
     "FieldSpec",
     "InputSpec",
     "make_env",
+    "MetricsTracker",
     "MouseEnv",
     "OutputSpec",
-    "RolloutMetrics",
     "StepOutput",
 ]

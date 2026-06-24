@@ -67,14 +67,14 @@ def test_non_stationary_cartpole() -> None:
         id="CartPole-ns",
         seed=0,
         num_envs=2,
-        max_episode_steps=500,
+        episodes_per_task=5,
         env_fn=_make_ns_cartpole,
     )
     env = make_env(cfg)
     try:
-        [(outputs, _metrics)] = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_inputs())
         for _ in range(3):
-            [(outputs, _metrics)] = env.step(env.sample_random_inputs())
+            outputs = env.step(env.sample_random_inputs())
         assert "ns_params" in outputs[0]
         assert "length" in outputs[0]["ns_params"]
         assert "observation" in outputs[0]

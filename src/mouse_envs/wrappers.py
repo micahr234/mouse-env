@@ -1,4 +1,4 @@
-"""Vector env wrappers, observation helpers, and stack factory."""
+"""Single-env wrappers and stack factory."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ from typing import Any, cast
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ObservationWrapper
-from gymnasium.vector import SyncVectorEnv
-from gymnasium.wrappers.vector import TransformReward
+
 
 # -----------------------------------------------------------------------------
 # Observation helpers
@@ -59,17 +58,15 @@ def _is_discrete_like(space: gym.Space) -> bool:
     return False
 
 
-def resolve_obs_key(
-    env: gym.vector.VectorEnv, observation_kind: str | None = None
-) -> str:
+def resolve_obs_key(env: gym.Env, observation_kind: str | None = None) -> str:
     """Return the internal routing key for this env's observation channel.
 
     Used internally to select the flat observation field written to each result record
     (``observation_discrete``, ``observation_continuous``, or ``observation_image``).
     ``observation_kind`` (``"continuous"``, ``"discrete"``, or ``"image"``) forces a
     channel explicitly; ``None`` auto-detects from the observation space. Auto-detection
-    cannot recognise image spaces (an image is a ``uint8`` ``Box`` that otherwise looks
-    discrete), so image envs must set ``observation_kind="image"``.
+    cannot recognise image spaces (a uint8 ``Box`` that otherwise looks discrete), so
+    image envs must set ``observation_kind="image"``.
     """
     if observation_kind == "image":
         return "observation_image"
@@ -82,154 +79,35 @@ def resolve_obs_key(
             f"observation_kind must be one of 'continuous', 'discrete', 'image', or None; "
             f"got {observation_kind!r}."
         )
-    if _is_discrete_like(env.single_observation_space):
+    if _is_discrete_like(env.observation_space):
         return "observation_discrete"
     return "observation"
 
 
 # -----------------------------------------------------------------------------
-# Vector env wrappers
+# Single-env wrappers
 # -----------------------------------------------------------------------------
 
 
-def _is_reset_frame(info: dict[str, Any], num_envs: int) -> np.ndarray:
-    """Return per-env mask for SyncVectorEnv ``NEXT_STEP`` autoreset frames."""
-    raw = info.get("is_reset_frame")
-    if raw is None:
-        return np.zeros(num_envs, dtype=np.bool_)
-    return np.asarray(raw, dtype=np.bool_)
-
-
-class EpisodeTrackingWrapper(gym.vector.VectorWrapper):
-    """Detect autoreset frames; track per-episode statistics and step counters.
-
-    Combines ``AutoresetFrameWrapper``, ``EpisodeStatisticsWrapper``, and
-    ``StepCounterWrapper`` in a single pass. Injects ``is_reset_frame``,
-    ``episode_length``, ``episode_cum_reward``, ``episode_time``, and
-    ``episode_index`` into ``info`` on every step.
-
-    With ``AutoresetMode.NEXT_STEP``, a sub-env that finished on the previous
-    step is reset on the next ``step()`` without applying the action — that blank
-    frame has ``is_reset_frame=True`` and does not accumulate episode stats.
-    """
-
-    def __init__(self, env: gym.vector.VectorEnv):
-        super().__init__(env)
-        n = env.num_envs
-        self._episode_length = np.zeros(n, dtype=np.int64)
-        self._episode_return = np.zeros(n, dtype=np.float64)
-        self._episode_time = np.zeros(n, dtype=np.int64)
-        self._episode_index = np.zeros(n, dtype=np.int64)
-        self._prev_dones = np.zeros(n, dtype=np.bool_)
-
-    def reset(self, **kwargs: Any):
-        obs, info = self.env.reset(**kwargs)
-        n = self.num_envs
-        self._episode_length[:] = 0
-        self._episode_return[:] = 0.0
-        self._episode_time[:] = 0
-        self._prev_dones[:] = False
-        info = dict(info)
-        info["is_reset_frame"] = np.zeros(n, dtype=np.bool_)
-        info["episode_length"] = np.full(n, np.nan, dtype=np.float64)
-        info["episode_cum_reward"] = np.full(n, np.nan, dtype=np.float64)
-        info["episode_time"] = self._episode_time.copy()
-        info["episode_index"] = self._episode_index.copy()
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        is_reset_frame = self._prev_dones & ~dones
-        step_mask = ~is_reset_frame
-        # Reset counters for envs whose previous step ended the episode.
-        self._episode_length[self._prev_dones] = 0
-        self._episode_return[self._prev_dones] = 0.0
-        self._episode_time[self._prev_dones] = 0
-        self._episode_index[self._prev_dones] += 1
-        # Accumulate only on real steps, not autoreset blank frames.
-        self._episode_length[step_mask] += 1
-        self._episode_return[step_mask] += np.asarray(reward, dtype=np.float64)[step_mask]
-        self._episode_time[step_mask] += 1
-        episode_length_out = np.full(self.num_envs, np.nan, dtype=np.float64)
-        episode_return_out = np.full(self.num_envs, np.nan, dtype=np.float64)
-        episode_length_out[dones] = self._episode_length[dones].astype(np.float64)
-        episode_return_out[dones] = self._episode_return[dones]
-        self._prev_dones = dones
-        info = dict(info)
-        info["is_reset_frame"] = is_reset_frame
-        info["episode_length"] = episode_length_out
-        info["episode_cum_reward"] = episode_return_out
-        info["episode_time"] = self._episode_time.copy()
-        info["episode_index"] = self._episode_index.copy()
-        return obs, reward, terminated, truncated, info
-
-
-def _reward_scale_shift_func(scale: float, shift: float) -> Callable[[np.ndarray], np.ndarray]:
-    scale_f = float(scale)
-    shift_f = float(shift)
-
-    def transform(reward: np.ndarray) -> np.ndarray:
-        return np.asarray(reward, dtype=np.float64) * scale_f + shift_f
-
-    return transform
-
-
-class XformedRewardWrapper(gym.vector.VectorWrapper):
-    """Compute and inject a normalised reward signal into ``info``."""
-
-    def __init__(self, env: gym.vector.VectorEnv, max_steps: int):
-        super().__init__(env)
-        if max_steps <= 0:
-            raise ValueError(f"max_steps must be positive, got {max_steps}")
-        self._max_steps = float(max_steps)
-        n = env.num_envs
-        self._episode_reward_sum = np.zeros(n, dtype=np.float64)
-        self._prev_dones = np.zeros(n, dtype=np.bool_)
-
-    def reset(self, **kwargs: Any):
-        obs, info = self.env.reset(**kwargs)
-        self._episode_reward_sum[:] = 0.0
-        self._prev_dones[:] = False
-        info = dict(info)
-        info["xformed_reward"] = np.zeros(self.num_envs, dtype=np.float64)
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        is_reset_frame = _is_reset_frame(info, self.num_envs)
-        self._episode_reward_sum[self._prev_dones] = 0.0
-        r = np.asarray(reward, dtype=np.float64)
-        self._episode_reward_sum[~is_reset_frame] += r[~is_reset_frame]
-        episode_time = np.asarray(info["episode_time"], dtype=np.float64)
-        xformed = (self._episode_reward_sum + (episode_time - 1.0) * r) / self._max_steps
-        xformed[is_reset_frame] = 0.0
-        info = dict(info)
-        info["xformed_reward"] = xformed
-        self._prev_dones = dones
-        return obs, reward, terminated, truncated, info
-
-
-class EnvIdentityWrapper(gym.vector.VectorWrapper):
-    """Inject done-status encoding into ``info``; expose convenience attributes."""
+class EnvIdentityWrapper(gym.Wrapper):
+    """Expose ``obs_key``, ``action_dim``, ``env_seed``, and ``sample_random_input()``."""
 
     def __init__(
         self,
-        env: gym.vector.VectorEnv,
+        env: gym.Env,
         name: str,
         env_seed: int,
         obs_key: str,
     ):
         super().__init__(env)
-        self._env_idx_arr = np.arange(env.num_envs, dtype=np.int64)
         self.name = name
         self.env_seed = int(env_seed)
         self.obs_key = obs_key
+        self._initial_reset_done = False
 
     @property
     def action_dim(self) -> int:
-        space = self.single_action_space
+        space = self.action_space
         if isinstance(space, gym.spaces.Discrete):
             return int(space.n)
         if isinstance(space, gym.spaces.Box):
@@ -238,35 +116,23 @@ class EnvIdentityWrapper(gym.vector.VectorWrapper):
             return len(space.nvec)
         return int(getattr(space, "n", 0))
 
-    def sample_random_inputs(self) -> np.ndarray:
+    def sample_random_input(self) -> np.ndarray:
         return np.asarray(self.action_space.sample())
 
     def reset(self, **kwargs: Any):
-        if "seed" not in kwargs:
-            kwargs["seed"] = self.env_seed
-        obs, info = self.env.reset(**kwargs)
-        info = dict(info)
-        info["done"] = np.zeros(self.num_envs, dtype=np.int64)
-        info["env_idx"] = self._env_idx_arr.copy()
-        return obs, info
-
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        done_int = np.zeros(self.num_envs, dtype=np.int64)
-        done_int[np.asarray(truncated, dtype=np.bool_)] = 2
-        done_int[np.asarray(terminated, dtype=np.bool_)] = 1
-        info = dict(info)
-        info["done"] = done_int
-        info["env_idx"] = self._env_idx_arr.copy()
-        return obs, reward, terminated, truncated, info
+        if not self._initial_reset_done:
+            self._initial_reset_done = True
+            if "seed" not in kwargs:
+                kwargs["seed"] = self.env_seed
+        return self.env.reset(**kwargs)
 
 
-class QStarWrapper(gym.vector.VectorWrapper):
+class QStarWrapper(gym.Wrapper):
     """Inject expert Q-values into ``info["metadata_q_star"]`` after each step and reset."""
 
     def __init__(
         self,
-        env: gym.vector.VectorEnv,
+        env: gym.Env,
         env_id: str,
         q_star_source: dict[str, Any],
         obs_key: str,
@@ -278,10 +144,10 @@ class QStarWrapper(gym.vector.VectorWrapper):
             env_id=env_id,
             q_star_source=q_star_source,
             obs_key=obs_key,
-            single_observation_space=env.single_observation_space,
+            single_observation_space=env.observation_space,
         )
         self._action_dim = int(getattr(env, "action_dim", 0))
-        self._continuous = isinstance(env.single_action_space, gym.spaces.Box)
+        self._continuous = isinstance(env.action_space, gym.spaces.Box)
 
     @property
     def obs_key(self) -> str:
@@ -295,67 +161,65 @@ class QStarWrapper(gym.vector.VectorWrapper):
     def action_dim(self) -> int:
         return cast(Any, self.env).action_dim
 
-    def sample_random_inputs(self) -> np.ndarray:
-        return cast(Any, self.env).sample_random_inputs()
+    def sample_random_input(self) -> np.ndarray:
+        return cast(Any, self.env).sample_random_input()
 
     def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
-        """Convert expert actions into the ``metadata_q_star`` representation.
-
-        Continuous (Box) action spaces surface the expert action vector directly;
-        discrete spaces produce one-hot Q-value rows over the action index.
-        """
+        """Convert a single expert action into the ``metadata_q_star`` representation."""
         if self._continuous:
             from mouse_envs.experts.action_star import action_star_to_continuous_q_star
 
+            ast_batch = np.asarray(ast, dtype=np.float64).reshape(1, -1)
             return action_star_to_continuous_q_star(
-                actions=ast, num_envs=self.num_envs, action_dim=self._action_dim
-            )
+                actions=ast_batch, num_envs=1, action_dim=self._action_dim
+            )[0]
         ast_arr = np.asarray(ast, dtype=np.int64).reshape(-1)
-        if ast_arr.shape[0] != self.num_envs:
-            raise ValueError(
-                f"expert policy returned shape {ast_arr.shape}, "
-                f"expected first dim {self.num_envs}."
-            )
         from mouse_envs.experts.action_star import action_star_to_one_hot_q_star
 
-        return action_star_to_one_hot_q_star(actions=ast_arr, num_actions=self._action_dim)
+        return action_star_to_one_hot_q_star(actions=ast_arr, num_actions=self._action_dim)[0]
 
-    def _attach(
-        self,
-        obs: Any,
-        info: dict[str, Any],
-        done_mask: np.ndarray | None,
-    ) -> dict[str, Any]:
+    def _obs_as_batch(self, obs: Any) -> np.ndarray:
+        """Return obs with a leading batch dimension for the adapter interface."""
+        if isinstance(obs, dict):
+            # Dict obs: use first value; most adapters do not support dict obs
+            arr = np.asarray(next(iter(obs.values())))
+        else:
+            arr = np.asarray(obs)
+        return arr[np.newaxis]
+
+    def _attach(self, obs: Any, info: dict[str, Any], *, done: bool) -> dict[str, Any]:
         if self._adapter is None:
             return info
-        q_star = self._adapter.q_star_from_infos(infos=info, num_envs=self.num_envs)
+        done_mask = np.array([done], dtype=np.bool_)
+        obs_batch = self._obs_as_batch(obs)
+
+        q_star = self._adapter.q_star_from_infos(infos=info, num_envs=1)
         if q_star is None:
-            q_star = self._adapter.q_star_from_observation(
-                obs=np.asarray(obs), done_mask=done_mask
-            )
+            q_star = self._adapter.q_star_from_observation(obs=obs_batch, done_mask=done_mask)
         if q_star is None and not self._continuous:
             q_star = self._adapter.q_star_from_action_star_infos(
-                infos=info, num_envs=self.num_envs, num_actions=self._action_dim
+                infos=info, num_envs=1, num_actions=self._action_dim
             )
         if q_star is None:
-            ast = self._adapter.action_star_from_observation(
-                obs=np.asarray(obs), done_mask=done_mask
-            )
+            ast = self._adapter.action_star_from_observation(obs=obs_batch, done_mask=done_mask)
             if ast is not None:
                 q_star = self._action_star_to_q_star(ast)
         if q_star is not None:
             info = dict(info)
-            info["metadata_q_star"] = np.asarray(q_star, dtype=np.float64)
+            q_arr = np.asarray(q_star, dtype=np.float64)
+            if q_arr.ndim == 2 and q_arr.shape[0] == 1:
+                q_arr = q_arr[0]
+            info["metadata_q_star"] = q_arr
         return info
 
     def reset(self, **kwargs: Any):
         obs, info = self.env.reset(**kwargs)
-        return obs, self._attach(obs, info, done_mask=None)
+        return obs, self._attach(obs, info, done=False)
 
-    def step(self, actions: Any):
-        obs, reward, terminated, truncated, info = self.env.step(actions)
-        dones = np.asarray(terminated, dtype=np.bool_) | np.asarray(truncated, dtype=np.bool_)
-        return obs, reward, terminated, truncated, self._attach(obs, info, done_mask=dones)
+    def step(self, action: Any):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        done = bool(terminated) or bool(truncated)
+        return obs, reward, terminated, truncated, self._attach(obs, info, done=done)
 
 
 class ConstructionSeedWrapper(gym.Wrapper):
@@ -374,28 +238,17 @@ class ConstructionSeedWrapper(gym.Wrapper):
 # -----------------------------------------------------------------------------
 
 
-def build_env_stack(
-    env_fns: list,
+def build_single_env(
+    env_fn: Callable[[], gym.Env],
     env_id: str,
     name: str,
     seed: int,
-    max_steps_per_episode: int,
     observation_kind: str | None = None,
-    reward_scale: float = 1.0,
-    reward_shift: float = 0.0,
     q_star_source: dict[str, Any] | None = None,
-) -> gym.vector.VectorEnv:
-    """Compose the standard env wrapper stack around a ``SyncVectorEnv``."""
-    env: gym.vector.VectorEnv = SyncVectorEnv(
-        env_fns,
-        copy=True,
-        observation_mode="different",
-        autoreset_mode=gym.vector.AutoresetMode.NEXT_STEP,
-    )
-    env = EpisodeTrackingWrapper(env)
+) -> gym.Env:
+    """Build the single-env wrapper stack around one ``gym.Env`` factory call."""
+    env = env_fn()
     resolved_obs_key = resolve_obs_key(env, observation_kind)
-    env = TransformReward(env, func=_reward_scale_shift_func(reward_scale, reward_shift))
-    env = XformedRewardWrapper(env, max_steps=max_steps_per_episode)
     env = EnvIdentityWrapper(env, name=name, env_seed=seed, obs_key=resolved_obs_key)
     if q_star_source is not None:
         env = QStarWrapper(
