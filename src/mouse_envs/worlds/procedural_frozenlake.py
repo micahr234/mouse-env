@@ -24,7 +24,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
     reward) sample one reward **per goal tile** when the map is generated (not on each ``reset``),
     stored in :attr:`_goal_rewards_by_state`; equal bounds yield a constant reward per goal.
     For a **fixed** map, pass ``fixed_map`` as a dict with
-    ``board`` and ``rewards`` (same shape as emitted metadata). When ``emit_q_star`` is True,
+    ``board`` and ``rewards`` (same shape as emitted map info). When ``emit_q_star`` is True,
     :meth:`compute_q_table` applies those terminal rewards in value iteration.
 
     When ``emit_map`` is True, ``info["map"]`` is a **JSON string** encoding
@@ -34,7 +34,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
 
     Map validity uses :meth:`_find_path_to_goal` so the shortest path from each ``S`` meets
     ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse_envs.experts.solve_tabular_mdp`
-    on Gymnasium's ``P`` matrix. The Q-table is rebuilt on every :meth:`reset`.
+    on Gymnasium's ``P`` matrix. The Q-table is computed once when the map is first initialized.
 
     ``step_penalty`` is added to the scalar reward on **every** :meth:`step` (including
     terminal transitions). Value iteration includes the same offset so ``q_star`` matches rollout
@@ -94,10 +94,11 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
                 - ``list[str]`` / ``tuple[str, ...]`` — rows of ``S``, ``F``, ``H``, ``G`` chars.
                 - ``dict`` with ``"board"`` key (list of row strings) and optional ``"rewards"``
                   key mapping goal state indices to reward values.
-            emit_q_star: When ``True``, run value iteration on every ``reset()`` and inject
-                the resulting Q-table into ``info["q_star"]`` each step.
+            emit_q_star: When ``True``, run value iteration once when the map is first
+                initialized and inject the resulting Q-table into ``info["q_star"]`` each step.
             emit_map: When ``True``, inject the map layout as a JSON string into
-                ``info["map"]`` once per episode (on the first step/reset).
+                ``info["map"]`` once per map initialization (on the first step/reset after
+                the map is created).
             goal_reward_low: Lower bound for per-goal reward sampling (inclusive).
             goal_reward_high: Upper bound for per-goal reward sampling. Equal bounds yield
                 a fixed reward.
@@ -149,11 +150,11 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
             desc=self._gridmap,
             is_slippery=bool(is_slippery),
         )
-        self._map_metadata = to_json_str(self._make_map_metadata_dict())
+        self._map_info = to_json_str(self._make_map_info_dict())
         self._map_dirty = True
         self._q_table: np.ndarray | None = None
 
-    def _make_map_metadata_dict(self) -> dict[str, Any]:
+    def _make_map_info_dict(self) -> dict[str, Any]:
         """Structured map payload; serialized to JSON for ``info["map"]`` when ``emit_map`` is True."""
         return {
             "board": list(self._gridmap),
@@ -477,12 +478,12 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         obs, info = super().reset(seed=seed, options=options)
-        if self.emit_q_star:
-            self._q_table = self.compute_q_table()
         info = dict[str, Any](info)
         if self._map_dirty:
             if self.emit_map:
-                info["map"] = self._map_metadata
+                info["map"] = self._map_info
+            if self.emit_q_star:
+                self._q_table = self.compute_q_table()
             self._map_dirty = False
         if self.emit_q_star:
             info["q_star"] = self._q_star_for_obs_with_first_visit(int(obs))
@@ -496,7 +497,9 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
         info = dict[str, Any](info)
         if self._map_dirty:
             if self.emit_map:
-                info["map"] = self._map_metadata
+                info["map"] = self._map_info
+            if self.emit_q_star:
+                self._q_table = self.compute_q_table()
             self._map_dirty = False
         if self.emit_q_star:
             info["q_star"] = self._q_star_for_obs_with_first_visit(int(obs))

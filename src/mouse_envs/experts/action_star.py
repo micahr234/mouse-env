@@ -2,7 +2,7 @@
 
 Provides:
 - ExpertPolicyAdapter: dataclass that wraps a loaded policy and exposes a uniform interface
-  for deriving ``metadata_q_star`` from env info, observation queries, or action hints.
+  for deriving ``env_q_star`` from env info, observation queries, or action hints.
 - build_q_star_source_adapter: factory that reads a ``q_star_source`` config dict and
   returns the appropriate adapter (SB3 policy, tabular Q-table, or env-info passthrough).
 - action_star_to_one_hot_q_star: convert integer expert actions to one-hot Q-value rows.
@@ -61,7 +61,7 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
     """Convert integer expert actions to one-hot Q-value rows.
 
     Produces a ``[num_envs, num_actions]`` float64 array with 1.0 at the expert
-    action index and 0.0 elsewhere, suitable for use as ``metadata_q_star`` when
+    action index and 0.0 elsewhere, suitable for use as ``env_q_star`` when
     the environment only exposes a scalar expert action rather than full Q-values.
     """
     actions = np.asarray(actions, dtype=np.int64).reshape(-1)
@@ -76,7 +76,7 @@ def action_star_to_continuous_q_star(
     """Surface continuous expert action vectors in the ``q_star`` slot.
 
     Box action spaces have no Q-value-over-actions, so the expert's target action
-    vector itself is exposed as ``metadata_q_star``. Produces a
+    vector itself is exposed as ``env_q_star``. Produces a
     ``[num_envs, action_dim]`` float64 array.
     """
     arr = np.asarray(actions, dtype=np.float64).reshape(num_envs, -1)
@@ -93,13 +93,13 @@ class ExpertPolicyAdapter:
     """Adapter that extracts expert Q-values or optimal actions from various sources.
 
     Used internally by :class:`~mouse_envs.wrappers.QStarWrapper` to populate
-    ``info["metadata_q_star"]`` on each step. Instantiated by
+    ``info["env_q_star"]`` on each step. Instantiated by
     :func:`build_q_star_source_adapter`; do not construct directly.
 
     Attributes:
-        name (str): Normalised provider name (``"metadata_q_star"``, ``"sb3_rl_zoo"``,
+        name (str): Normalised provider name (``"env_q_star"``, ``"sb3_rl_zoo"``,
             or ``"hf_q_table"``).
-        require_metadata_action_star (bool): When ``True``, :meth:`action_star_from_infos`
+        require_action_star (bool): When ``True``, :meth:`action_star_from_infos`
             raises if ``"action_star"`` is missing from the env info dict.
         external_policy: Loaded SB3 policy or :class:`_TabularQPolicy` instance, or
             ``None`` when Q-values come directly from env info.
@@ -115,7 +115,7 @@ class ExpertPolicyAdapter:
     """
 
     name: str
-    require_metadata_action_star: bool = True
+    require_action_star: bool = True
     external_policy: Any | None = None
     deterministic: bool = True
     obs_key: str = "observation"
@@ -135,17 +135,17 @@ class ExpertPolicyAdapter:
 
         Returns:
             ``int64[num_envs]`` array of expert actions, or ``None`` if the key is absent
-            and ``require_metadata_action_star`` is ``False``.
+            and ``require_action_star`` is ``False``.
 
         Raises:
-            ValueError: If the key is absent and ``require_metadata_action_star`` is ``True``.
+            ValueError: If the key is absent and ``require_action_star`` is ``True``.
         """
         value = infos.get("action_star", None)
         if value is None:
-            if self.require_metadata_action_star:
+            if self.require_action_star:
                 raise ValueError(
                     f"q_star_source={self.name!r} requires env info key 'action_star'. "
-                    "Make sure the env emits action_star metadata."
+                    "Make sure the env emits action_star."
                 )
             return None
         return _to_batched_action_star(value=value, num_envs=num_envs)
@@ -452,11 +452,11 @@ def normalize_q_star_source_name(q_star_source: dict[str, Any] | None) -> str | 
     if q_star_source is None:
         return None
     provider = str(q_star_source.get("provider", "")).strip().lower()
-    supported = {"metadata_q_star", "sb3_rl_zoo", "hf_q_table"}
+    supported = {"env_q_star", "sb3_rl_zoo", "hf_q_table"}
     if provider not in supported:
         raise ValueError(
             f"Unsupported q_star_source.provider={provider!r}. "
-            "Supported: 'metadata_q_star', 'sb3_rl_zoo', or 'hf_q_table'."
+            "Supported: 'env_q_star', 'sb3_rl_zoo', or 'hf_q_table'."
         )
     return provider
 
@@ -471,7 +471,7 @@ def build_q_star_source_adapter(
 
     Resolves the provider name and loads the appropriate expert policy:
 
-    - ``"metadata_q_star"`` — reads Q-values or action hints directly from env
+    - ``"env_q_star"`` — reads Q-values or action hints directly from env
       info keys; no external model loaded.
     - ``"sb3_rl_zoo"`` — downloads and loads an SB3 policy checkpoint from the
       Hugging Face Hub (or a local ``path``).
@@ -500,8 +500,8 @@ def build_q_star_source_adapter(
     policy_name = normalize_q_star_source_name(q_star_source)
     if policy_name is None:
         return None
-    if policy_name == "metadata_q_star":
-        return ExpertPolicyAdapter(name=policy_name, require_metadata_action_star=False)
+    if policy_name == "env_q_star":
+        return ExpertPolicyAdapter(name=policy_name, require_action_star=False)
 
     cfg = dict(q_star_source or {})
     deterministic = bool(cfg.get("deterministic", True))
@@ -553,7 +553,7 @@ def build_q_star_source_adapter(
         policy = _TabularQPolicy(qtable=np.asarray(qtable), obs_space_dims=obs_space_dims)
         return ExpertPolicyAdapter(
             name=policy_name,
-            require_metadata_action_star=False,
+            require_action_star=False,
             external_policy=policy,
             deterministic=deterministic,
             obs_key=obs_key,
@@ -636,7 +636,7 @@ def build_q_star_source_adapter(
             )
     return ExpertPolicyAdapter(
         name=policy_name,
-        require_metadata_action_star=False,
+        require_action_star=False,
         external_policy=policy,
         deterministic=deterministic,
         obs_key=obs_key,
@@ -651,7 +651,7 @@ def apply_q_star_source_env_kwargs(
 ) -> dict[str, Any]:
     """Inject any env-construction kwargs required by the ``q_star_source`` config.
 
-    For first-party worlds (Procedural Frozen Lake / Synthetic Environment) with ``provider="metadata_q_star"``,
+    For first-party worlds (Procedural Frozen Lake / Synthetic Environment) with ``provider="env_q_star"``,
     this sets ``emit_q_star=True`` in ``env_kwargs`` so the env solves the tabular MDP
     and emits Q-values into ``info["q_star"]`` each step.
 
@@ -671,12 +671,12 @@ def apply_q_star_source_env_kwargs(
 
     out = dict(env_kwargs)
     emit_q_star = bool((q_star_source or {}).get("emit_q_star", False))
-    if policy_name == "metadata_q_star" and env_id in (PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
+    if policy_name == "env_q_star" and env_id in (PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
         emit_q_star = True
     if emit_q_star and env_id in (PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID):
         out["emit_q_star"] = True
 
-    if env_id == PROCEDURAL_FROZENLAKE_ENV_ID and policy_name == "metadata_q_star":
+    if env_id == PROCEDURAL_FROZENLAKE_ENV_ID and policy_name == "env_q_star":
         random_map_wrapper = out.get("random_map_wrapper", None)
         if isinstance(random_map_wrapper, dict):
             wrapped = dict(random_map_wrapper)

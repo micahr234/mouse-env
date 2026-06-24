@@ -128,7 +128,7 @@ class EnvIdentityWrapper(gym.Wrapper):
 
 
 class QStarWrapper(gym.Wrapper):
-    """Inject expert Q-values into ``info["metadata_q_star"]`` after each step and reset."""
+    """Inject expert Q-values into ``info["env_q_star"]`` after each step and reset."""
 
     def __init__(
         self,
@@ -165,7 +165,7 @@ class QStarWrapper(gym.Wrapper):
         return cast(Any, self.env).sample_random_input()
 
     def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
-        """Convert a single expert action into the ``metadata_q_star`` representation."""
+        """Convert a single expert action into the ``env_q_star`` representation."""
         if self._continuous:
             from mouse_envs.experts.action_star import action_star_to_continuous_q_star
 
@@ -209,7 +209,7 @@ class QStarWrapper(gym.Wrapper):
             q_arr = np.asarray(q_star, dtype=np.float64)
             if q_arr.ndim == 2 and q_arr.shape[0] == 1:
                 q_arr = q_arr[0]
-            info["metadata_q_star"] = q_arr
+            info["env_q_star"] = q_arr
         return info
 
     def reset(self, **kwargs: Any):

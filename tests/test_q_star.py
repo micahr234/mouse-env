@@ -1,4 +1,4 @@
-"""Offline tests for expert Q* adapters and env metadata injection."""
+"""Offline tests for expert Q* adapters and env Q* injection."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _rollout(env, steps: int = 3) -> list:
 
 
 def test_normalize_q_star_source_canonical_providers() -> None:
-    assert normalize_q_star_source_name({"provider": "metadata_q_star"}) == "metadata_q_star"
+    assert normalize_q_star_source_name({"provider": "env_q_star"}) == "env_q_star"
     assert normalize_q_star_source_name({"provider": "hf_q_table"}) == "hf_q_table"
     assert normalize_q_star_source_name({"provider": "sb3_rl_zoo"}) == "sb3_rl_zoo"
     assert normalize_q_star_source_name(None) is None
@@ -78,7 +78,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
     try:
         assert env.input_specs[0].action.shape == (1,)
         result = _rollout(env, steps=2)
-        q_star = result[0]["info_metadata_q_star"]
+        q_star = result[0]["info_env_q_star"]
         # Continuous expert: q_star carries the expert action vector, not one-hot.
         assert q_star.shape == (1,)
         assert np.all(np.isfinite(q_star))
@@ -87,18 +87,18 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
         env.close()
 
 
-def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
+def test_env_q_star_procedural_frozenlake_is_exact() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
         seed=3,
         num_envs=1,
         episodes_per_task=5,
-        q_star_source={"provider": "metadata_q_star"},
+        q_star_source={"provider": "env_q_star"},
     )
     env = make_env(cfg)
     try:
         result = _rollout(env, steps=2)
-        q_star = result[0]["info_metadata_q_star"]
+        q_star = result[0]["info_env_q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         # Optimal Q* should have a unique argmax per state.
@@ -107,20 +107,20 @@ def test_metadata_q_star_procedural_frozenlake_is_exact() -> None:
         env.close()
 
 
-def test_metadata_q_star_synthetic_matches_action_dim() -> None:
+def test_env_q_star_synthetic_matches_action_dim() -> None:
     cfg = EnvConfig(
         id="SyntheticEnv-v1",
         seed=1,
         num_envs=2,
         episodes_per_task=5,
         kwargs={"obs_size": 8, "action_size": 3},
-        q_star_source={"provider": "metadata_q_star"},
+        q_star_source={"provider": "env_q_star"},
     )
     env = make_env(cfg)
     try:
         result = _rollout(env, steps=2)
-        assert result[0]["info_metadata_q_star"].shape == (3,)
-        assert result[1]["info_metadata_q_star"].shape == (3,)
+        assert result[0]["info_env_q_star"].shape == (3,)
+        assert result[1]["info_env_q_star"].shape == (3,)
     finally:
         env.close()
 
@@ -148,7 +148,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
         env = make_env(cfg)
     try:
         result = _rollout(env, steps=2)
-        q_star = result[0]["info_metadata_q_star"]
+        q_star = result[0]["info_env_q_star"]
         assert q_star.shape == (2,)
         # PPO has no predict_q — wrapper falls back to one-hot expert actions.
         assert np.isclose(q_star.sum(), 1.0)
@@ -203,7 +203,7 @@ def test_hf_q_table_vector_env_integration(
         env = make_env(cfg)
     try:
         result = _rollout(env, steps=2)
-        q_star = result[0]["info_metadata_q_star"]
+        q_star = result[0]["info_env_q_star"]
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         assert not np.isclose(q_star.sum(), 1.0)
@@ -221,7 +221,7 @@ def test_q_star_absent_when_disabled() -> None:
     env = make_env(cfg)
     try:
         result = _rollout(env, steps=2)
-        assert "info_metadata_q_star" not in result[0]
+        assert "info_env_q_star" not in result[0]
     finally:
         env.close()
 

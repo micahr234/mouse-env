@@ -90,8 +90,8 @@ class StepOutput(TypedDict, total=False):
     output dict instead.
 
     Every key from the underlying Gymnasium ``info`` dict is forwarded as
-    ``info_<key>``. For example, ``info["metadata_q_star"]`` appears as
-    ``outputs[i]["info_metadata_q_star"]``, ``info["map"]`` as
+    ``info_<key>``. For example, ``info["env_q_star"]`` appears as
+    ``outputs[i]["info_env_q_star"]``, ``info["map"]`` as
     ``outputs[i]["info_map"]``, and ``info["ns_params"]`` as
     ``outputs[i]["info_ns_params"]``.
     """
@@ -447,8 +447,8 @@ class MouseEnv:
         episode_index (int)       — episode counter for this slot
         task_index (int)          — task counter for this slot
         info_<key> (any)          — every key from the Gymnasium info dict is forwarded as
-                                    ``info_<key>``. For example, ``info["metadata_q_star"]``
-                                    from a Q* wrapper appears as ``info_metadata_q_star``,
+                                    ``info_<key>``. For example, ``info["env_q_star"]``
+                                    from a Q* wrapper appears as ``info_env_q_star``,
                                     ``info["map"]`` as ``info_map``, ``info["ns_params"]``
                                     as ``info_ns_params``.
 

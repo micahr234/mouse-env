@@ -99,10 +99,11 @@ class SyntheticEnv(gym.Env[int, int]):
             map: Fixed map dict with keys ``"transition"``, ``"goal"``, ``"reward"``,
                 and ``"start"`` (all as ``numpy`` arrays). When provided, all random-sampling
                 parameters above are ignored.
-            emit_q_star: When ``True``, run value iteration at construction and inject the
-                Q-table into ``info["q_star"]`` on each step/reset.
+            emit_q_star: When ``True``, run value iteration once when the map is first
+                initialized and inject the Q-table into ``info["q_star"]`` on each step/reset.
             emit_map: When ``True``, inject the MDP arrays as a JSON string into
-                ``info["map"]`` once per episode (on the first step/reset after construction).
+                ``info["map"]`` once per map initialization (on the first step/reset after
+                the map is created).
             step_penalty: Scalar added to every step reward (including terminal steps).
                 Included in value iteration so ``q_star`` matches rollout rewards.
             transition_prob: When sampling a random MDP, probability that a ``(state, action)``

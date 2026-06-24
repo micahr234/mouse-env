@@ -1,4 +1,4 @@
-"""Expert policies and MDP solvers for Q* metadata."""
+"""Expert policies and MDP solvers for Q*."""
 
 from mouse_envs.experts.value_iteration import (
     solve_tabular_mdp,

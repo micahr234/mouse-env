@@ -68,7 +68,7 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; `observation_kind="image"` |
 | [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
 | [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
-| [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `metadata_q_star`; tabular experiments |
+| [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `env_q_star`; tabular experiments |
 | [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env slot names |
 | [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
 
@@ -141,7 +141,41 @@ mouse-env also includes a few knobs for augmenting and modifying environments.
 
 ### Expert Q-values (`q_star_source`)
 
-Expert Q-values are exposed as `outputs[i]["q_star"]`. They are useful for supervision, diagnostics, or comparing learned behavior against an expert or exact tabular solution.
+Set `q_star_source` on `EnvConfig` to attach expert Q-values to every step output as `outputs[i]["info_env_q_star"]`. Useful for imitation learning, diagnostics, or guided exploration.
+
+`q_star_source` is a plain `dict` with a required `"provider"` key plus provider-specific fields:
+
+#### `"env_q_star"` — env-computed Q*
+
+The env runs value iteration internally and injects Q-values into every step. Requires `SyntheticEnv-v1` or `Procedural-FrozenLake-v1`; no extra fields needed.
+
+```python
+q_star_source={"provider": "env_q_star"}
+```
+
+#### `"hf_q_table"` — precomputed tabular Q-table
+
+Loads a Q-table from a local pickle or the Hugging Face Hub. The pickle must be `{"qtable": ndarray[states, actions]}` or a bare `ndarray`.
+
+| Field | Required | Description |
+|---|---|---|
+| `"path"` | if no `repo_id` | Local path to a `.pkl` file |
+| `"repo_id"` | if no `path` | HF Hub repo ID (e.g. `"user/my-qtable"`) |
+| `"filename"` | no | File in the Hub repo (default: `"q-learning.pkl"`) |
+| `"deterministic"` | no | Argmax action selection (default: `True`) |
+
+#### `"sb3_rl_zoo"` — Stable-Baselines3 checkpoint
+
+Loads an SB3 policy from a local `.zip` or the Hugging Face Hub. Requires `stable-baselines3`; `"qrdqn"` additionally requires `sb3-contrib`.
+
+| Field | Required | Description |
+|---|---|---|
+| `"algo"` | yes | `"a2c"`, `"ddpg"`, `"dqn"`, `"ppo"`, `"sac"`, `"td3"`, `"qrdqn"` |
+| `"path"` | if no `repo_id` | Local path to an SB3 `.zip` checkpoint |
+| `"repo_id"` | if no `path` | HF Hub repo ID |
+| `"filename"` | if no `path` | File in the Hub repo |
+| `"device"` | no | `"cpu"`, `"cuda"`, or `"auto"` (default: `"cpu"`) |
+| `"deterministic"` | no | Deterministic action selection (default: `True`) |
 
 Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
