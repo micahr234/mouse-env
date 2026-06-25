@@ -77,7 +77,7 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 
 ## Core API ⚙️
 
-There is no public rollout-time `reset()` call. The first `step()` quietly performs an internal reset and returns the initial observation using the same record shape as every other step. Inputs passed on that first call are ignored.
+`MouseEnv` is a Gymnasium `Env` subclass for space introspection, but it uses the Mouse reset-free rollout protocol instead of the standard Gymnasium `reset()`/`step(action)` loop. Public `reset()` raises `NotImplementedError`; the first `step()` quietly performs an internal reset and returns the initial observation using the same record shape as every other step. Inputs passed on that first call are ignored.
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
@@ -85,7 +85,7 @@ After an episode terminates or truncates, the next call to `step()` emits the re
 
 `inputs` is a flat `list[dict]` — one dict per env instance, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for env index `i`; use `env.output_specs[i]` for the full output contract.
 
-Underlying Gymnasium action spaces are available as `env.action_spaces[i]`. For example, call `env.action_spaces[i].seed(...)` to control `action_space.sample()` using the standard Gymnasium API.
+Underlying Gymnasium spaces are available as tuple spaces on `env.action_space` and `env.observation_space`. For example, call `env.action_space.spaces[i].seed(...)` to control random action sampling for env instance `i` using the standard Gymnasium API.
 
 **Episode statistics** are kept separate from the per-step stream and are accumulated automatically in `env.tracker` (a `MetricsTracker`):
 
@@ -208,7 +208,7 @@ Use `episode_reset_options` to pass a dict to every internal `env.reset(options=
 * `kwargs={"map_seed": ...}` controls first-party procedural map/MDP generation (`SyntheticEnv-v1` and `Procedural-FrozenLake-v1`). It is an env-specific constructor argument, not a base `EnvConfig` field.
 * `reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.
 
-Use these seeds when you want to hold one source of randomness fixed while varying another. For random action sampling, use the normal Gymnasium action-space API through `env.action_spaces[i]`. See [examples/10_rng_seeding_control.ipynb](examples/10_rng_seeding_control.ipynb) for a runnable walkthrough.
+Use these seeds when you want to hold one source of randomness fixed while varying another. For random action sampling, use the normal Gymnasium action-space API through `env.action_space.spaces[i]`. See [examples/10_rng_seeding_control.ipynb](examples/10_rng_seeding_control.ipynb) for a runnable walkthrough.
 
 ### Observation routing (`observation_kind`)
 

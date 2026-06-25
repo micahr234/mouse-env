@@ -52,6 +52,27 @@ def test_cartpole_step_contract() -> None:
         env.close()
 
 
+def test_mouse_env_exposes_gym_tuple_spaces() -> None:
+    cfg = EnvConfig(
+        id="CartPole-v1",
+        seed=0,
+        num_envs=2,
+        episodes_per_task=5,
+    )
+    env = make_env(cfg)
+    try:
+        assert isinstance(env, gym.Env)
+        assert isinstance(env.action_space, gym.spaces.Tuple)
+        assert isinstance(env.observation_space, gym.spaces.Tuple)
+        assert len(env.action_space.spaces) == 2
+        assert len(env.observation_space.spaces) == 2
+        assert isinstance(env.action_space.spaces[0], gym.spaces.Discrete)
+        assert isinstance(env.observation_space.spaces[0], gym.spaces.Box)
+        assert not hasattr(env, "action_spaces")
+    finally:
+        env.close()
+
+
 def test_output_spec_and_input_spec_cartpole() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
@@ -151,6 +172,25 @@ def test_action_input_contract_is_enforced() -> None:
         missing_key = [{"wrong": torch.tensor(0)}]
         with pytest.raises(ValueError, match="action"):
             env.step(missing_key)
+        with pytest.raises(ValueError, match="exactly 1 entries"):
+            env.step([])
+        with pytest.raises(ValueError, match="one dict per env instance"):
+            env.step({"action": torch.tensor(0)})
+    finally:
+        env.close()
+
+
+def test_mouse_env_reset_is_not_implemented() -> None:
+    cfg = EnvConfig(
+        id="CartPole-v1",
+        seed=0,
+        num_envs=1,
+        episodes_per_task=5,
+    )
+    env = make_env(cfg)
+    try:
+        with pytest.raises(NotImplementedError, match="reset-free Mouse rollout protocol"):
+            env.reset()
     finally:
         env.close()
 
@@ -347,7 +387,7 @@ def test_make_env_stream_seeds_are_independent() -> None:
     assert _first_map(map_seed=3, reset_seed=4) != _first_map(map_seed=30, reset_seed=4)
 
 
-def test_action_spaces_can_be_seeded_for_random_inputs() -> None:
+def test_action_space_can_be_seeded_for_random_inputs() -> None:
     def _sampled_actions(*, reset_seed: int, action_space_seed: int) -> list[int]:
         cfg = EnvConfig(
             id="SyntheticEnv-v1",
@@ -358,8 +398,8 @@ def test_action_spaces_can_be_seeded_for_random_inputs() -> None:
         )
         env = make_env(cfg)
         try:
-            assert len(env.action_spaces) == 1
-            env.action_spaces[0].seed(action_space_seed)
+            assert len(env.action_space.spaces) == 1
+            env.action_space.spaces[0].seed(action_space_seed)
             return [int(env.sample_random_inputs()[0]["action"].item()) for _ in range(12)]
         finally:
             env.close()
@@ -423,7 +463,7 @@ def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
     )
     env = make_env(cfg)
     try:
-        space = env._env_instances[0]._env.observation_space
+        space = env.observation_space.spaces[0]
         assert isinstance(space, gym.spaces.Discrete)
         assert space.n == 30
 
@@ -431,7 +471,7 @@ def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
         env.step(env.sample_random_inputs())
         env.step(env.sample_random_inputs())
 
-        space = env._env_instances[0]._env.observation_space
+        space = env.observation_space.spaces[0]
         assert isinstance(space, gym.spaces.Discrete)
         assert space.n == 30
     finally:

@@ -275,7 +275,7 @@ class _EnvInstance:
 
     def sample_random_input(self) -> dict:
         """Sample a random action as a ``dict`` with a flat ``"action"`` key."""
-        raw = cast(Any, self._env).sample_random_input()
+        raw = self._env.action_space.sample()
         act_dtype = cast(torch.dtype, self._input_spec.action.dtype)
         return {ACTION_KEY: self._action_tensor(raw, dtype=act_dtype)}
 
@@ -435,7 +435,7 @@ class _EnvInstance:
         self._env.close()
 
 
-class MouseEnv:
+class MouseEnv(gym.Env):
     """A flat list of independent env instances, each built from one :class:`EnvConfig`.
 
     Use :func:`mouse_envs.make_env` with a single :class:`EnvConfig` or a
@@ -450,11 +450,13 @@ class MouseEnv:
     (:class:`MetricsTracker`). Call ``env.tracker.clear()`` to reset the accumulated
     data between evaluation runs.
 
-    There is no public ``reset()`` — call ``step()`` only. The first ``step()`` after
-    construction performs an internal reset for each env instance and returns initial
-    observations with ``done == 0`` and ``time == 0``; inputs on that call are ignored.
-    The step after any episode terminates or truncates is also a reset frame: the user's
-    action is ignored and the first observation of the new episode is returned.
+    ``MouseEnv`` subclasses :class:`gymnasium.Env` to expose Gymnasium spaces, but it
+    intentionally keeps the Mouse rollout protocol. Public ``reset()`` raises
+    ``NotImplementedError``; call ``step()`` only. The first ``step()`` after construction
+    performs an internal reset for each env instance and returns initial observations
+    with ``done == 0`` and ``time == 0``; inputs on that call are ignored. The step after
+    any episode terminates or truncates is also a reset frame: the user's action is
+    ignored and the first observation of the new episode is returned.
 
     Every ``outputs[i]`` contains:
         time (int64 tensor)       — step index within the episode (0-based)
@@ -510,9 +512,26 @@ class MouseEnv:
         return [env.input_spec for env in self._env_instances]
 
     @property
-    def action_spaces(self) -> tuple[gym.Space, ...]:
-        """Underlying Gymnasium action spaces, one per env instance."""
-        return tuple(env._env.action_space for env in self._env_instances)
+    def action_space(self) -> gym.spaces.Tuple:
+        """Gymnasium tuple action space, one subspace per env instance."""
+        return gym.spaces.Tuple(tuple(env._env.action_space for env in self._env_instances))
+
+    @property
+    def observation_space(self) -> gym.spaces.Tuple:
+        """Gymnasium tuple observation space, one subspace per env instance."""
+        return gym.spaces.Tuple(tuple(env._env.observation_space for env in self._env_instances))
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[Any, dict[str, Any]]:
+        """Mouse rollouts reset internally; use ``step()`` instead."""
+        raise NotImplementedError(
+            "MouseEnv does not support public reset(); call step() to use the "
+            "reset-free Mouse rollout protocol."
+        )
 
     def sample_random_inputs(self) -> list[dict]:
         """Sample random inputs for every env instance.
@@ -533,6 +552,14 @@ class MouseEnv:
         Completed-episode statistics are recorded automatically into
         :attr:`tracker`. Call ``env.tracker.clear()`` to reset between runs.
         """
+        if not isinstance(inputs, list):
+            raise ValueError(
+                f"inputs must be a list with one dict per env instance; got {type(inputs).__name__}."
+            )
+        if len(inputs) != self.num_envs:
+            raise ValueError(
+                f"inputs must contain exactly {self.num_envs} entries, got {len(inputs)}."
+            )
         all_outputs: list[dict] = []
         for i, (env, inp) in enumerate(zip(self._env_instances, inputs)):
             output, episode_result = env.step(inp)

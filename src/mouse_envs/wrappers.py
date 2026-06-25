@@ -90,39 +90,25 @@ def resolve_obs_key(env: gym.Env, observation_kind: str | None = None) -> str:
 
 
 class EnvIdentityWrapper(gym.Wrapper):
-    """Expose ``obs_key``, ``action_dim``, ``env_seed``, and ``sample_random_input()``."""
+    """Expose the Mouse observation routing key on a single Gymnasium env."""
 
     def __init__(
         self,
         env: gym.Env,
-        name: str,
-        env_seed: int,
         obs_key: str,
     ):
         super().__init__(env)
-        self.name = name
-        self.env_seed = int(env_seed)
         self.obs_key = obs_key
-        self._initial_reset_done = False
 
-    @property
-    def action_dim(self) -> int:
-        space = self.action_space
-        if isinstance(space, gym.spaces.Discrete):
-            return int(space.n)
-        if isinstance(space, gym.spaces.Box):
-            return int(np.prod(space.shape))
-        if isinstance(space, gym.spaces.MultiDiscrete):
-            return len(space.nvec)
-        return int(getattr(space, "n", 0))
 
-    def sample_random_input(self) -> np.ndarray:
-        return np.asarray(self.action_space.sample())
-
-    def reset(self, **kwargs: Any):
-        if not self._initial_reset_done:
-            self._initial_reset_done = True
-        return self.env.reset(**kwargs)
+def _action_dim_for_space(space: gym.Space) -> int:
+    if isinstance(space, gym.spaces.Discrete):
+        return int(space.n)
+    if isinstance(space, gym.spaces.Box):
+        return int(np.prod(space.shape))
+    if isinstance(space, gym.spaces.MultiDiscrete):
+        return len(space.nvec)
+    return int(getattr(space, "n", 0))
 
 
 class QStarWrapper(gym.Wrapper):
@@ -144,23 +130,12 @@ class QStarWrapper(gym.Wrapper):
             obs_key=obs_key,
             single_observation_space=env.observation_space,
         )
-        self._action_dim = int(getattr(env, "action_dim", 0))
+        self._action_dim = _action_dim_for_space(env.action_space)
         self._continuous = isinstance(env.action_space, gym.spaces.Box)
 
     @property
     def obs_key(self) -> str:
         return cast(Any, self.env).obs_key
-
-    @property
-    def env_seed(self) -> int:
-        return cast(Any, self.env).env_seed
-
-    @property
-    def action_dim(self) -> int:
-        return cast(Any, self.env).action_dim
-
-    def sample_random_input(self) -> np.ndarray:
-        return cast(Any, self.env).sample_random_input()
 
     def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
         """Convert a single expert action into the ``env_q_star`` representation."""
@@ -246,15 +221,13 @@ class SeedStreamWrapper(gym.Wrapper):
 def build_single_env(
     env_fn: Callable[[], gym.Env],
     env_id: str,
-    name: str,
-    seed: int,
     observation_kind: str | None = None,
     q_star_source: dict[str, Any] | None = None,
 ) -> gym.Env:
     """Build the single-env wrapper stack around one ``gym.Env`` factory call."""
     env = env_fn()
     resolved_obs_key = resolve_obs_key(env, observation_kind)
-    env = EnvIdentityWrapper(env, name=name, env_seed=seed, obs_key=resolved_obs_key)
+    env = EnvIdentityWrapper(env, obs_key=resolved_obs_key)
     if q_star_source is not None:
         env = QStarWrapper(
             env, env_id=env_id, q_star_source=q_star_source, obs_key=resolved_obs_key

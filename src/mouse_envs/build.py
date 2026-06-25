@@ -39,7 +39,7 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
         env = make_env(EnvConfig(id="CartPole-v1", seed=0, num_envs=4, episodes_per_task=5))
         for _ in range(1000):
             inputs = env.sample_random_inputs()
-            outputs, metrics = env.step(inputs)
+            outputs = env.step(inputs)
 
     Usage — multiple envs::
 
@@ -48,7 +48,7 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
             EnvConfig(id="MountainCar-v0", seed=1, num_envs=3, episodes_per_task=5),
         ])
         for _ in range(1000):
-            outputs, metrics = env.step(env.sample_random_inputs())
+            outputs = env.step(env.sample_random_inputs())
             cartpole_outs = outputs[:2]
             mountaincar_outs = outputs[2:]
     """
@@ -76,13 +76,10 @@ def _make_env_instances(config: EnvConfig) -> list[_EnvInstance]:
     env_instances: list[_EnvInstance] = []
     for i in range(config.num_envs):
         name = f"{name_base}_{i}"
-        env_seed = config.seed + i
 
         env = build_single_env(
             env_fn=lambda idx=i: _make_plain_single_env(config, idx, env_kwargs=env_kwargs),
             env_id=config.id,
-            name=name,
-            seed=env_seed,
             observation_kind=config.observation_kind,
             q_star_source=resolved_q_star_source,
         )
