@@ -22,7 +22,7 @@ def test_cartpole_step_contract() -> None:
         EnvConfig(
             id="CartPole-v1",
             name=f"train-cartpole_{i}",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
         )
         for i in range(3)
@@ -57,8 +57,8 @@ def test_cartpole_step_contract() -> None:
 def test_mouse_env_exposes_gym_tuple_spaces() -> None:
     env = make_env(
         [
-            EnvConfig(id="CartPole-v1", seed=0, episodes_per_task=5),
-            EnvConfig(id="CartPole-v1", seed=1, episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", reset_seed=0, episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", reset_seed=1, episodes_per_task=5),
         ]
     )
     try:
@@ -77,7 +77,7 @@ def test_mouse_env_exposes_gym_tuple_spaces() -> None:
 def test_output_spec_and_input_spec_cartpole() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
     )
     env = make_env(cfg)
@@ -111,7 +111,7 @@ def test_output_spec_and_input_spec_cartpole() -> None:
 def test_output_spec_frozenlake_obs() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         q_star_source={"provider": "env_q_star"},
     )
@@ -130,8 +130,8 @@ def test_output_spec_frozenlake_obs() -> None:
 def test_pendulum_continuous_step_contract() -> None:
     env = make_env(
         [
-            EnvConfig(id="Pendulum-v1", seed=0, episodes_per_task=5),
-            EnvConfig(id="Pendulum-v1", seed=1, episodes_per_task=5),
+            EnvConfig(id="Pendulum-v1", reset_seed=0, episodes_per_task=5),
+            EnvConfig(id="Pendulum-v1", reset_seed=1, episodes_per_task=5),
         ]
     )
     try:
@@ -157,7 +157,7 @@ def test_pendulum_continuous_step_contract() -> None:
 def test_action_input_contract_is_enforced() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
     )
     env = make_env(cfg)
@@ -180,7 +180,7 @@ def test_action_input_contract_is_enforced() -> None:
 def test_mouse_env_reset_is_not_implemented() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
     )
     env = make_env(cfg)
@@ -217,7 +217,7 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
 
     cfg = EnvConfig(
         id="DictObs",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         env_fn=lambda: DictObsEnv(),
     )
@@ -241,7 +241,7 @@ def test_procedural_frozenlake_vector() -> None:
     cfgs = [
         EnvConfig(
             id="Procedural-FrozenLake-v1",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
             q_star_source={"provider": "env_q_star"},
         )
@@ -264,7 +264,7 @@ def test_synthetic_vector() -> None:
     cfgs = [
         EnvConfig(
             id="SyntheticEnv-v1",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
             q_star_source={"provider": "env_q_star"},
         )
@@ -284,7 +284,7 @@ def test_synthetic_vector() -> None:
 def test_procedural_frozenlake_can_regenerate_map_from_episode_reset_options() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=7,
+        reset_seed=7,
         episodes_per_task=5,
         episode_reset_options={"regenerate_map": True},
         kwargs={
@@ -310,7 +310,7 @@ def test_procedural_frozenlake_can_regenerate_map_from_episode_reset_options() -
 def test_synthetic_can_regenerate_map_from_episode_reset_options() -> None:
     cfg = EnvConfig(
         id="SyntheticEnv-v1",
-        seed=7,
+        reset_seed=7,
         episodes_per_task=5,
         episode_reset_options={"regenerate_map": True},
         kwargs={
@@ -369,7 +369,6 @@ def test_make_env_stream_seeds_are_independent() -> None:
     def _first_map(*, map_seed: int, reset_seed: int) -> str:
         cfg = EnvConfig(
             id="SyntheticEnv-v1",
-            seed=0,
             reset_seed=reset_seed,
             kwargs={"obs_size": 8, "action_size": 7, "map_seed": map_seed},
         )
@@ -387,7 +386,6 @@ def test_action_space_can_be_seeded_for_random_inputs() -> None:
     def _sampled_actions(*, reset_seed: int, action_space_seed: int) -> list[int]:
         cfg = EnvConfig(
             id="SyntheticEnv-v1",
-            seed=0,
             reset_seed=reset_seed,
             kwargs={"obs_size": 8, "action_size": 7, "map_seed": 1},
         )
@@ -412,7 +410,7 @@ def test_procedural_frozenlake_can_regenerate_map_at_task_boundary_only() -> Non
 
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=7,
+        reset_seed=7,
         episodes_per_task=2,
         task_reset_options={"regenerate_map": True},
         kwargs={
@@ -442,7 +440,7 @@ def test_procedural_frozenlake_can_regenerate_map_at_task_boundary_only() -> Non
 def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=7,
+        reset_seed=7,
         episodes_per_task=1,
         task_reset_options={"regenerate_map": True},
         kwargs={
@@ -474,7 +472,7 @@ def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
 def _task_regenerated_frozenlake_maps(seed: int) -> list[str]:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=seed,
+        reset_seed=seed,
         episodes_per_task=1,
         task_reset_options={"regenerate_map": True},
         kwargs={
@@ -504,7 +502,7 @@ def test_task_regenerated_maps_are_seed_reproducible() -> None:
 def test_partial_observability() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         observation_indices=[0, 2],
     )
@@ -521,7 +519,7 @@ def test_partial_observability() -> None:
 def test_reset_frame_contract() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         reset_reward=-1.0,
     )
@@ -551,7 +549,7 @@ def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, int]:
 def test_autoreset_frame_zeros_reward_with_shift() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         reward_scale=0.5,
         reward_shift=1.0,
@@ -578,7 +576,7 @@ def test_env_fn_factory() -> None:
         EnvConfig(
             id="CartPole-custom",
             name=f"CartPole-custom_{i}",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
             env_fn=make_cartpole,
         )
@@ -598,7 +596,7 @@ def test_env_fn_factory() -> None:
 def test_observation_kind_override() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         observation_kind="discrete",
     )
@@ -617,7 +615,7 @@ def test_task_done_codes_fire_at_task_boundary() -> None:
 
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=2,
         kwargs={"max_episode_steps": 10},
     )
@@ -647,7 +645,7 @@ def test_tracker_accumulates_and_clears() -> None:
 
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         kwargs={"max_episode_steps": 10},
     )

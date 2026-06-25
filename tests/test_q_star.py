@@ -60,7 +60,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
     cfgs = [
         EnvConfig(
             id="Pendulum-v1",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
             q_star_source={
                 "provider": "sb3_rl_zoo",
@@ -92,7 +92,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
 def test_env_q_star_procedural_frozenlake_is_exact() -> None:
     cfg = EnvConfig(
         id="Procedural-FrozenLake-v1",
-        seed=3,
+        reset_seed=3,
         episodes_per_task=5,
         q_star_source={"provider": "env_q_star"},
     )
@@ -112,7 +112,7 @@ def test_env_q_star_synthetic_matches_action_dim() -> None:
     cfgs = [
         EnvConfig(
             id="SyntheticEnv-v1",
-            seed=i,
+            reset_seed=i,
             episodes_per_task=5,
             kwargs={"obs_size": 8, "action_size": 3},
             q_star_source={"provider": "env_q_star"},
@@ -133,7 +133,7 @@ def test_sb3_local_path_injects_q_star_without_hf(
 ) -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         q_star_source={
             "provider": "sb3_rl_zoo",
@@ -188,7 +188,7 @@ def test_hf_q_table_vector_env_integration(
 ) -> None:
     cfg = EnvConfig(
         id="SyntheticEnv-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         kwargs={"obs_size": 16, "action_size": 4},
         q_star_source={
@@ -215,7 +215,7 @@ def test_hf_q_table_vector_env_integration(
 def test_q_star_absent_when_disabled() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
     )
     env = make_env(cfg)

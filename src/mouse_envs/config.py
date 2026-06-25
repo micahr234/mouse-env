@@ -16,9 +16,7 @@ class EnvConfig:
     Attributes:
         id: Gymnasium env ID (e.g. ``"CartPole-v1"``). Used as the base name when
             ``name`` is not set.
-        seed: RNG seed used for mouse-env's internal Gymnasium reset stream when
-            ``reset_seed`` is not set.
-        reset_seed: Optional seed for mouse-env's internal Gymnasium reset stream.
+        reset_seed: Seed for mouse-env's internal Gymnasium reset stream.
         episodes_per_task: Number of episodes before the task terminates. Defaults to
             ``0`` (unlimited) — the task boundary (done codes 3/4) never fires
             automatically.
@@ -69,8 +67,7 @@ class EnvConfig:
     """
 
     id: str
-    seed: int
-    reset_seed: int | None = None
+    reset_seed: int
     episodes_per_task: int = 0
     name: str | None = None
     kwargs: dict | None = None

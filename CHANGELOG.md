@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `EnvConfig.reset_seed` is now the sole config field for mouse-env's internal Gymnasium reset seeding.
+
+### Removed
+- `EnvConfig.seed`; use `EnvConfig.reset_seed` for reset-time seeding and `kwargs={"map_seed": ...}` for first-party procedural map/MDP generation.
+
 ## [0.5.0] - 2026-06-25
 
 ### Added

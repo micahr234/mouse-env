@@ -67,7 +67,7 @@ def test_non_stationary_cartpole() -> None:
         [
             EnvConfig(
                 id="CartPole-ns",
-                seed=i,
+                reset_seed=i,
                 episodes_per_task=5,
                 env_fn=_make_ns_cartpole,
             )

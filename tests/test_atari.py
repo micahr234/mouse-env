@@ -36,7 +36,7 @@ def test_atari_vector_preprocessing() -> None:
         [
             EnvConfig(
                 id="ALE/Pong-v5",
-                seed=i,
+                reset_seed=i,
                 episodes_per_task=5,
                 observation_kind="image",
                 env_fn=_pong_factory(
@@ -70,7 +70,7 @@ def test_atari_vector_preprocessing() -> None:
 def test_atari_multi_step_rollout() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
-        seed=1,
+        reset_seed=1,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(500, preprocess_kwargs={"noop_max": 0}),
@@ -89,7 +89,7 @@ def test_atari_multi_step_rollout() -> None:
 def test_atari_discrete_action_sampling() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs={"noop_max": 0}),
@@ -108,7 +108,7 @@ def test_atari_discrete_action_sampling() -> None:
 def test_atari_without_preprocessing() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
-        seed=0,
+        reset_seed=0,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs=None),

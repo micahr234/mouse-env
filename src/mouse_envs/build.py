@@ -35,7 +35,7 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
 
     Usage — single env::
 
-        env = make_env(EnvConfig(id="CartPole-v1", seed=0, episodes_per_task=5))
+        env = make_env(EnvConfig(id="CartPole-v1", reset_seed=0, episodes_per_task=5))
         for _ in range(1000):
             inputs = env.sample_random_inputs()
             outputs = env.step(inputs)
@@ -43,9 +43,9 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
     Usage — multiple envs::
 
         env = make_env([
-            EnvConfig(id="CartPole-v1", seed=0, name="cartpole-0", episodes_per_task=5),
-            EnvConfig(id="CartPole-v1", seed=1, name="cartpole-1", episodes_per_task=5),
-            EnvConfig(id="MountainCar-v0", seed=2, name="mountaincar-0", episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", reset_seed=0, name="cartpole-0", episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", reset_seed=1, name="cartpole-1", episodes_per_task=5),
+            EnvConfig(id="MountainCar-v0", reset_seed=2, name="mountaincar-0", episodes_per_task=5),
         ])
         for _ in range(1000):
             outputs = env.step(env.sample_random_inputs())
@@ -116,8 +116,6 @@ def _make_plain_single_env(
     *,
     env_kwargs: dict[str, Any],
 ) -> gym.Env:
-    reset_seed = config.reset_seed if config.reset_seed is not None else config.seed
-
     def env_fn() -> gym.Env:
         if config.env_fn is not None:
             return config.env_fn()
@@ -126,7 +124,7 @@ def _make_plain_single_env(
 
     env = SeedStreamWrapper(
         env_fn,
-        reset_seed=reset_seed,
+        reset_seed=config.reset_seed,
     )
     if config.observation_indices is not None:
         env = ObservationSliceWrapper(env=env, indices=config.observation_indices)

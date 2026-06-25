@@ -43,7 +43,7 @@ from mouse_envs import EnvConfig, make_env
 
 cfg = EnvConfig(
     id="CartPole-v1",
-    seed=0,
+    reset_seed=0,
     episodes_per_task=5,
 )
 env = make_env(cfg)
@@ -193,7 +193,7 @@ def make_cartpole():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)  # apply any Gymnasium wrappers here
 
-cfg = EnvConfig(id="my-cartpole", seed=0, episodes_per_task=5, env_fn=make_cartpole)
+cfg = EnvConfig(id="my-cartpole", reset_seed=0, episodes_per_task=5, env_fn=make_cartpole)
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.
@@ -202,10 +202,10 @@ This is also how you apply custom Gymnasium wrappers (preprocessing, observation
 
 Use `episode_reset_options` to pass a dict to every internal `env.reset(options=...)`. Use `task_reset_options` for options that apply only when the reset starts a new task; these are overlaid on top of `episode_reset_options`.
 
-`EnvConfig.seed` is the convenience seed used for mouse-env's internal reset stream unless `reset_seed` is set. To build multiple env instances, pass a `list[EnvConfig]` and choose seeds explicitly for each config:
+`EnvConfig.reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. To build multiple env instances, pass a `list[EnvConfig]` and choose reset seeds explicitly for each config:
 
 * `kwargs={"map_seed": ...}` controls first-party procedural map/MDP generation (`SyntheticEnv-v1` and `Procedural-FrozenLake-v1`). It is an env-specific constructor argument, not a base `EnvConfig` field.
-* `reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.
+* In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.
 
 Use these seeds when you want to hold one source of randomness fixed while varying another. For random action sampling, use the normal Gymnasium action-space API through `env.action_space.spaces[i]`. See [examples/10_rng_seeding_control.ipynb](examples/10_rng_seeding_control.ipynb) for a runnable walkthrough.
 
