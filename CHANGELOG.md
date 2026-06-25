@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Added a playable Procedural FrozenLake notebook with D-pad controls and rendered output.
+- `mouse_envs.__version__` now exposes the installed `mouse-env` package version from package metadata.
 
 ### Changed
 - `EnvConfig.reset_seed` is now the sole config field for mouse-env's internal Gymnasium reset seeding.
