@@ -439,8 +439,8 @@ class MouseEnv(gym.Env):
     """A flat list of independent env instances, each built from one :class:`EnvConfig`.
 
     Use :func:`mouse_envs.make_env` with a single :class:`EnvConfig` or a
-    ``list[EnvConfig]`` to construct. ``EnvConfig.num_envs=N`` creates N independent
-    env instances — equivalent to specifying N separate single-env configs.
+    ``list[EnvConfig]`` to construct. Each config creates one independent env
+    instance.
 
     ``step`` and ``sample_random_inputs`` use a flat structure indexed by env.
     ``inputs[i]`` is the input dict for the i-th env instance. ``step`` returns a

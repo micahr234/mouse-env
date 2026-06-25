@@ -17,6 +17,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - All Gymnasium `info` dict keys are now forwarded verbatim as `info_<key>` in every step output. For example, `info["env_q_star"]` appears as `outputs[i]["info_env_q_star"]`, `info["map"]` as `outputs[i]["info_map"]`, and `info["ns_params"]` as `outputs[i]["info_ns_params"]`. No env-specific filtering is applied.
 
 ### Changed
+- Repeated env instances are now created by passing an explicit `list[EnvConfig]` to `make_env`; each `EnvConfig` builds exactly one env instance.
 - Per-instance action-space access now uses the standard Gymnasium tuple space API (`env.action_space.spaces[i]`) instead of the removed `env.action_spaces` helper.
 - `SyntheticEnv-v1` and `Procedural-FrozenLake-v1` now use `map_seed` instead of constructor `seed` for generated maps/MDPs, and random maps are generated lazily on first reset rather than during construction.
 - Renamed flattened-env terminology to "env instance" / "env index"; the flat `outputs[i]`, `inputs[i]`, `env.names`, `env.input_specs`, and `env.output_specs` API shape is unchanged.
@@ -33,6 +34,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Renamed `q_star_source` provider `"metadata_q_star"` to `"env_q_star"`; the output key `info_metadata_q_star` is now `info_env_q_star`.
 
 ### Removed
+- `EnvConfig.num_envs`; use one `EnvConfig` per env instance so per-env seeds and constructor kwargs such as `map_seed` are explicit.
 - `MouseEnv.action_spaces`; use `env.action_space.spaces[i]` or drill down into the underlying Gymnasium env instance instead.
 - `first_visit_bonus` removed from `Procedural-FrozenLake-v1`; Q* outputs now reflect the solved map directly without undocumented novelty shaping.
 - `RolloutMetrics` TypedDict removed from the public API (`mouse_envs` no longer exports it).

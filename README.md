@@ -44,7 +44,6 @@ from mouse_envs import EnvConfig, make_env
 cfg = EnvConfig(
     id="CartPole-v1",
     seed=0,
-    num_envs=4,
     episodes_per_task=5,
 )
 env = make_env(cfg)
@@ -120,7 +119,7 @@ This keeps the rollout stream uniform while still making both episode and task s
 
 Pass any Gymnasium environment id as `id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
 
-Each constructed env exposes indexed names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`, plus `_0`, `_1`, and so on. `env.name` returns the first name for single-env use. Step outputs do not repeat this name on every record.
+Each constructed env exposes names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`. Step outputs do not repeat this name on every record.
 
 mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 
@@ -187,14 +186,14 @@ Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Bring your own env (`env_fn`)
 
-Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. mouse-env calls it once per parallel env, so it must return a **new** env each time (not a shared instance). `name` if set, otherwise `id`, is used as the base for `env.names`. Time-limit truncation and any other wrappers are left entirely to your factory.
+Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. `name` if set, otherwise `id`, is used in `env.names`. Time-limit truncation and any other wrappers are left entirely to your factory.
 
 ```python
 def make_cartpole():
     env = gym.make("CartPole-v1", max_episode_steps=500)
     return MyWrapper(env)  # apply any Gymnasium wrappers here
 
-cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, episodes_per_task=5, env_fn=make_cartpole)
+cfg = EnvConfig(id="my-cartpole", seed=0, episodes_per_task=5, env_fn=make_cartpole)
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.
@@ -203,7 +202,7 @@ This is also how you apply custom Gymnasium wrappers (preprocessing, observation
 
 Use `episode_reset_options` to pass a dict to every internal `env.reset(options=...)`. Use `task_reset_options` for options that apply only when the reset starts a new task; these are overlaid on top of `episode_reset_options`.
 
-`EnvConfig.seed` is the convenience base seed. Each env instance derives mouse-env reset seeds from `seed + env_index` unless `reset_seed` is set:
+`EnvConfig.seed` is the convenience seed used for mouse-env's internal reset stream unless `reset_seed` is set. To build multiple env instances, pass a `list[EnvConfig]` and choose seeds explicitly for each config:
 
 * `kwargs={"map_seed": ...}` controls first-party procedural map/MDP generation (`SyntheticEnv-v1` and `Procedural-FrozenLake-v1`). It is an env-specific constructor argument, not a base `EnvConfig` field.
 * `reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.

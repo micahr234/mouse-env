@@ -32,17 +32,21 @@ def _pong_factory(max_episode_steps: int, *, preprocess_kwargs: dict | None):
 
 
 def test_atari_vector_preprocessing() -> None:
-    cfg = EnvConfig(
-        id="ALE/Pong-v5",
-        seed=0,
-        num_envs=2,
-        episodes_per_task=5,
-        observation_kind="image",
-        env_fn=_pong_factory(
-            500, preprocess_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 0}
-        ),
+    env = make_env(
+        [
+            EnvConfig(
+                id="ALE/Pong-v5",
+                seed=i,
+                episodes_per_task=5,
+                observation_kind="image",
+                env_fn=_pong_factory(
+                    500,
+                    preprocess_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 0},
+                ),
+            )
+            for i in range(2)
+        ]
     )
-    env = make_env(cfg)
     try:
         assert env._env_instances[0].obs_key == "observation_image"
         outputs = env.step(env.sample_random_inputs())
@@ -67,7 +71,6 @@ def test_atari_multi_step_rollout() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
         seed=1,
-        num_envs=1,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(500, preprocess_kwargs={"noop_max": 0}),
@@ -87,7 +90,6 @@ def test_atari_discrete_action_sampling() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
         seed=0,
-        num_envs=1,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs={"noop_max": 0}),
@@ -107,7 +109,6 @@ def test_atari_without_preprocessing() -> None:
     cfg = EnvConfig(
         id="ALE/Pong-v5",
         seed=0,
-        num_envs=1,
         episodes_per_task=5,
         observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs=None),

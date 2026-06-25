@@ -29,14 +29,13 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
     """Create a :class:`MouseEnv` from one or more :class:`EnvConfig` objects.
 
     Pass a single :class:`EnvConfig` for the common single-env case, or a list to
-    combine multiple heterogeneous environments into one :class:`MouseEnv`. Each
-    ``EnvConfig.num_envs=N`` expands to N independent single-env instances. All
-    env instances are stepped sequentially; outputs form a flat list indexed by
-    env.
+    combine multiple environments into one :class:`MouseEnv`. Each config creates
+    one independent env instance. All env instances are stepped sequentially;
+    outputs form a flat list indexed by env.
 
     Usage — single env::
 
-        env = make_env(EnvConfig(id="CartPole-v1", seed=0, num_envs=4, episodes_per_task=5))
+        env = make_env(EnvConfig(id="CartPole-v1", seed=0, episodes_per_task=5))
         for _ in range(1000):
             inputs = env.sample_random_inputs()
             outputs = env.step(inputs)
@@ -44,58 +43,47 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
     Usage — multiple envs::
 
         env = make_env([
-            EnvConfig(id="CartPole-v1", seed=0, num_envs=2, episodes_per_task=5),
-            EnvConfig(id="MountainCar-v0", seed=1, num_envs=3, episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", seed=0, name="cartpole-0", episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", seed=1, name="cartpole-1", episodes_per_task=5),
+            EnvConfig(id="MountainCar-v0", seed=2, name="mountaincar-0", episodes_per_task=5),
         ])
         for _ in range(1000):
             outputs = env.step(env.sample_random_inputs())
             cartpole_outs = outputs[:2]
-            mountaincar_outs = outputs[2:]
+            mountaincar_outs = outputs[2:3]
     """
     if isinstance(configs, EnvConfig):
         configs = [configs]
-    env_instances: list[_EnvInstance] = []
-    for cfg in configs:
-        env_instances.extend(_make_env_instances(cfg))
+    env_instances = [_make_env_instance(cfg) for cfg in configs]
     return MouseEnv(env_instances)
 
 
-def _make_env_instances(config: EnvConfig) -> list[_EnvInstance]:
-    """Expand one :class:`EnvConfig` into a flat list of single-env instances."""
-    if config.num_envs < 1:
-        raise ValueError(f"num_envs must be >= 1, got {config.num_envs}.")
-
+def _make_env_instance(config: EnvConfig) -> _EnvInstance:
+    """Build one env instance from one :class:`EnvConfig`."""
     _require_env_id(config.id)
-    name_base = config.id if config.name is None else config.name
+    name = config.id if config.name is None else config.name
     resolved_q_star_source = (
         dict(config.q_star_source) if config.q_star_source is not None else None
     )
 
     env_kwargs = {} if config.env_fn is not None else _prepare_plain_env_kwargs(config)
 
-    env_instances: list[_EnvInstance] = []
-    for i in range(config.num_envs):
-        name = f"{name_base}_{i}"
-
-        env = build_single_env(
-            env_fn=lambda idx=i: _make_plain_single_env(config, idx, env_kwargs=env_kwargs),
-            env_id=config.id,
-            observation_kind=config.observation_kind,
-            q_star_source=resolved_q_star_source,
-        )
-        env_instances.append(
-            _EnvInstance(
-                env=env,
-                name=name,
-                reset_reward=config.reset_reward,
-                episode_reset_options=config.episode_reset_options,
-                task_reset_options=config.task_reset_options,
-                reward_scale=config.reward_scale,
-                reward_shift=config.reward_shift,
-                episodes_per_task=config.episodes_per_task,
-            )
-        )
-    return env_instances
+    env = build_single_env(
+        env_fn=lambda: _make_plain_single_env(config, env_kwargs=env_kwargs),
+        env_id=config.id,
+        observation_kind=config.observation_kind,
+        q_star_source=resolved_q_star_source,
+    )
+    return _EnvInstance(
+        env=env,
+        name=name,
+        reset_reward=config.reset_reward,
+        episode_reset_options=config.episode_reset_options,
+        task_reset_options=config.task_reset_options,
+        reward_scale=config.reward_scale,
+        reward_shift=config.reward_shift,
+        episodes_per_task=config.episodes_per_task,
+    )
 
 
 def _prepare_plain_env_kwargs(config: EnvConfig) -> dict[str, Any]:
@@ -125,11 +113,10 @@ def _prepare_plain_env_kwargs(config: EnvConfig) -> dict[str, Any]:
 
 def _make_plain_single_env(
     config: EnvConfig,
-    index: int,
     *,
     env_kwargs: dict[str, Any],
 ) -> gym.Env:
-    reset_seed = (config.reset_seed if config.reset_seed is not None else config.seed) + index
+    reset_seed = config.reset_seed if config.reset_seed is not None else config.seed
 
     def env_fn() -> gym.Env:
         if config.env_fn is not None:

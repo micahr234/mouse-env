@@ -63,14 +63,17 @@ def _make_ns_cartpole() -> gym.Env:
 
 
 def test_non_stationary_cartpole() -> None:
-    cfg = EnvConfig(
-        id="CartPole-ns",
-        seed=0,
-        num_envs=2,
-        episodes_per_task=5,
-        env_fn=_make_ns_cartpole,
+    env = make_env(
+        [
+            EnvConfig(
+                id="CartPole-ns",
+                seed=i,
+                episodes_per_task=5,
+                env_fn=_make_ns_cartpole,
+            )
+            for i in range(2)
+        ]
     )
-    env = make_env(cfg)
     try:
         outputs = env.step(env.sample_random_inputs())
         for _ in range(3):
