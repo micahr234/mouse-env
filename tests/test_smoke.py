@@ -224,15 +224,19 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
     env = make_env(cfg)
     try:
         outputs = _rollout(env, steps=2)
-        # Float subspace -> float32; integer subspace -> int64, regardless of key name.
-        assert outputs[0]["pos"].dtype == torch.float32
-        assert outputs[0]["tile"].dtype == torch.int64
+        assert "pos" not in outputs[0]
+        assert "tile" not in outputs[0]
+        obs = outputs[0]["observation"]
+        assert isinstance(obs, dict)
+        # Output tensors preserve each subspace dtype.
+        assert obs["pos"].dtype == torch.float32
+        assert obs["tile"].dtype == torch.int32
 
-        # output_specs[0].observation is a dict of FieldSpecs for Dict obs spaces
+        # output_specs[0].observation describes the nested observation dict.
         ospec = env.output_specs[0]
         assert isinstance(ospec.observation, dict)
         assert ospec.observation["pos"].dtype == torch.float32
-        assert ospec.observation["tile"].dtype == torch.int64
+        assert ospec.observation["tile"].dtype == torch.int32
     finally:
         env.close()
 
@@ -593,19 +597,69 @@ def test_env_fn_factory() -> None:
         env.close()
 
 
-def test_observation_kind_override() -> None:
+def test_box_observation_preserves_native_uint8_dtype() -> None:
+    class Uint8ImageEnv(gym.Env):
+        observation_space = gym.spaces.Box(0, 255, shape=(2, 3), dtype=np.uint8)
+        action_space = gym.spaces.Discrete(2)
+
+        def reset(self, *, seed=None, options=None):
+            super().reset(seed=seed)
+            return np.full((2, 3), 7, dtype=np.uint8), {}
+
+        def step(self, action):
+            return np.full((2, 3), 9, dtype=np.uint8), 1.0, False, False, {}
+
     cfg = EnvConfig(
-        id="CartPole-v1",
+        id="Uint8ImageEnv-v0",
         reset_seed=0,
         episodes_per_task=5,
-        observation_kind="discrete",
+        env_fn=Uint8ImageEnv,
     )
     env = make_env(cfg)
     try:
-        assert env._env_instances[0].obs_key == "observation_discrete"
         outputs = _rollout(env, steps=2)
         assert "observation" in outputs[0]
-        assert env.output_specs[0].observation.dtype == torch.int64
+        assert outputs[0]["observation"].dtype == torch.uint8
+        assert env.output_specs[0].observation.dtype == torch.uint8
+        assert env.output_specs[0].observation.shape == (2, 3)
+    finally:
+        env.close()
+
+
+def test_box_action_preserves_native_float64_dtype() -> None:
+    class Float64ActionEnv(gym.Env):
+        observation_space = gym.spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
+        action_space = gym.spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64)
+
+        def __init__(self):
+            self.last_action = None
+
+        def reset(self, *, seed=None, options=None):
+            super().reset(seed=seed)
+            return np.zeros(1, dtype=np.float32), {}
+
+        def step(self, action):
+            self.last_action = action
+            return np.zeros(1, dtype=np.float32), 0.0, False, False, {}
+
+    cfg = EnvConfig(
+        id="Float64ActionEnv-v0",
+        reset_seed=0,
+        episodes_per_task=5,
+        env_fn=Float64ActionEnv,
+    )
+    env = make_env(cfg)
+    try:
+        inputs = env.sample_random_inputs()
+        assert inputs[0]["action"].dtype == torch.float64
+        assert env.input_specs[0].action.dtype == torch.float64
+
+        env.step(inputs)  # initial reset frame ignores the action
+        inputs = [{"action": torch.tensor([0.25, -0.25], dtype=torch.float64)}]
+        env.step(inputs)
+        inner_env = env._env_instances[0]._env.env
+        assert inner_env.last_action is not None
+        assert inner_env.last_action.dtype == np.float64
     finally:
         env.close()
 

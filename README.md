@@ -64,7 +64,7 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [01 — Random rollout](examples/01_random_rollout.ipynb) | End-to-end loop; output fields; `done` codes; reset frames; `EnvConfig`; `input_specs`/`output_specs`; tracker |
 | [02 — Expert Q-values](examples/02_q_star_expert.ipynb) | `q_star_source`; `hf_q_table` provider; value iteration; greedy expert rollout |
 | [03 — Non-stationary env](examples/03_ns_gym_oscillating.ipynb) | `env_fn` factory pattern; NS-Gym adapter; `ns_params` in outputs |
-| [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; `observation_kind="image"` |
+| [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; preprocessed frame passthrough |
 | [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
 | [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
 | [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `env_q_star`; tabular experiments |
@@ -81,9 +81,9 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
-`step()` returns a single flat `list[dict]` of **outputs** — one entry per env instance. Each output dict contains model-visible training data: an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields.
+`step()` returns a single flat `list[dict]` of **outputs** — one entry per env instance. Each output dict contains model-visible training data: an `observation` value, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields. Dict observations are preserved under the `observation` key.
 
-`inputs` is a flat `list[dict]` — one dict per env instance, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for env index `i`; use `env.output_specs[i]` for the full output contract.
+`inputs` is a flat `list[dict]` — one dict per env instance, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for env index `i`; use `env.output_specs[i]` for the full output contract. Actions and observations preserve the underlying Gymnasium spaces' native dtypes wherever possible.
 
 Underlying Gymnasium spaces are available as tuple spaces on `env.action_space` and `env.observation_space`. For example, call `env.action_space.spaces[i].seed(...)` to control random action sampling for env instance `i` using the standard Gymnasium API.
 
@@ -209,10 +209,6 @@ Use `episode_reset_options` to pass a dict to every internal `env.reset(options=
 * In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.
 
 Use these seeds when you want to hold one source of randomness fixed while varying another. For random action sampling, use the normal Gymnasium action-space API through `env.action_space.spaces[i]`. See [examples/10_rng_seeding_control.ipynb](examples/10_rng_seeding_control.ipynb) for a runnable walkthrough.
-
-### Observation routing (`observation_kind`)
-
-Force the observation channel with `observation_kind` (`"continuous"`, `"discrete"`, or `"image"`). Defaults to auto-detection from the observation space; required (`"image"`) for image envs, which auto-detection cannot recognise.
 
 ### Partial observability
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -45,60 +45,9 @@ class ObservationSliceWrapper(ObservationWrapper):
         return flat[self._indices].astype(self.observation_space.dtype)
 
 
-def _is_discrete_like(space: gym.Space) -> bool:
-    if isinstance(space, (gym.spaces.Discrete, gym.spaces.MultiDiscrete, gym.spaces.MultiBinary)):
-        return True
-    if isinstance(space, gym.spaces.Tuple):
-        return all(_is_discrete_like(s) for s in space.spaces)
-    if isinstance(space, gym.spaces.Dict):
-        return all(_is_discrete_like(s) for s in space.spaces.values())
-    if isinstance(space, gym.spaces.Box):
-        obs_dtype = np.dtype(space.dtype)
-        return bool(np.issubdtype(obs_dtype, np.integer) or np.issubdtype(obs_dtype, np.bool_))
-    return False
-
-
-def resolve_obs_key(env: gym.Env, observation_kind: str | None = None) -> str:
-    """Return the internal routing key for this env's observation channel.
-
-    Used internally to select the flat observation field written to each result record
-    (``observation_discrete``, ``observation_continuous``, or ``observation_image``).
-    ``observation_kind`` (``"continuous"``, ``"discrete"``, or ``"image"``) forces a
-    channel explicitly; ``None`` auto-detects from the observation space. Auto-detection
-    cannot recognise image spaces (a uint8 ``Box`` that otherwise looks discrete), so
-    image envs must set ``observation_kind="image"``.
-    """
-    if observation_kind == "image":
-        return "observation_image"
-    if observation_kind == "discrete":
-        return "observation_discrete"
-    if observation_kind == "continuous":
-        return "observation"
-    if observation_kind is not None:
-        raise ValueError(
-            f"observation_kind must be one of 'continuous', 'discrete', 'image', or None; "
-            f"got {observation_kind!r}."
-        )
-    if _is_discrete_like(env.observation_space):
-        return "observation_discrete"
-    return "observation"
-
-
 # -----------------------------------------------------------------------------
 # Single-env wrappers
 # -----------------------------------------------------------------------------
-
-
-class EnvIdentityWrapper(gym.Wrapper):
-    """Expose the Mouse observation routing key on a single Gymnasium env."""
-
-    def __init__(
-        self,
-        env: gym.Env,
-        obs_key: str,
-    ):
-        super().__init__(env)
-        self.obs_key = obs_key
 
 
 def _action_dim_for_space(space: gym.Space) -> int:
@@ -119,7 +68,6 @@ class QStarWrapper(gym.Wrapper):
         env: gym.Env,
         env_id: str,
         q_star_source: dict[str, Any],
-        obs_key: str,
     ):
         from mouse_envs.experts.action_star import build_q_star_source_adapter
 
@@ -127,15 +75,10 @@ class QStarWrapper(gym.Wrapper):
         self._adapter = build_q_star_source_adapter(
             env_id=env_id,
             q_star_source=q_star_source,
-            obs_key=obs_key,
             single_observation_space=env.observation_space,
         )
         self._action_dim = _action_dim_for_space(env.action_space)
         self._continuous = isinstance(env.action_space, gym.spaces.Box)
-
-    @property
-    def obs_key(self) -> str:
-        return cast(Any, self.env).obs_key
 
     def _action_star_to_q_star(self, ast: Any) -> np.ndarray:
         """Convert a single expert action into the ``env_q_star`` representation."""
@@ -221,15 +164,10 @@ class SeedStreamWrapper(gym.Wrapper):
 def build_single_env(
     env_fn: Callable[[], gym.Env],
     env_id: str,
-    observation_kind: str | None = None,
     q_star_source: dict[str, Any] | None = None,
 ) -> gym.Env:
     """Build the single-env wrapper stack around one ``gym.Env`` factory call."""
     env = env_fn()
-    resolved_obs_key = resolve_obs_key(env, observation_kind)
-    env = EnvIdentityWrapper(env, obs_key=resolved_obs_key)
     if q_star_source is not None:
-        env = QStarWrapper(
-            env, env_id=env_id, q_star_source=q_star_source, obs_key=resolved_obs_key
-        )
+        env = QStarWrapper(env, env_id=env_id, q_star_source=q_star_source)
     return env

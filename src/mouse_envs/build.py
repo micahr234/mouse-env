@@ -71,7 +71,6 @@ def _make_env_instance(config: EnvConfig) -> _EnvInstance:
     env = build_single_env(
         env_fn=lambda: _make_plain_single_env(config, env_kwargs=env_kwargs),
         env_id=config.id,
-        observation_kind=config.observation_kind,
         q_star_source=resolved_q_star_source,
     )
     return _EnvInstance(

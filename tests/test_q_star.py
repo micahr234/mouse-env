@@ -169,7 +169,6 @@ def test_hf_q_table_local_path_returns_full_q_values(
             "provider": "hf_q_table",
             "path": str(tabular_qtable_pickle_path),
         },
-        obs_key="observation_discrete",
         single_observation_space=obs_space,
     )
     assert adapter is not None
@@ -231,5 +230,4 @@ def test_build_adapter_rejects_unknown_provider() -> None:
         build_q_star_source_adapter(
             env_id="CartPole-v1",
             q_star_source={"provider": "not_a_real_provider"},
-            obs_key="observation",
         )

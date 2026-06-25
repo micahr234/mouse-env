@@ -105,8 +105,6 @@ class ExpertPolicyAdapter:
             ``None`` when Q-values come directly from env info.
         deterministic (bool): Whether to use deterministic (argmax) action selection
             when querying ``external_policy.predict``.
-        obs_key (str): Canonical observation key used when preparing observations for
-            the external policy.
         external_frame_stack (int): Number of stacked frames expected by the policy
             (inferred from the policy's observation space shape). ``0`` or ``1`` means
             no stacking.
@@ -118,7 +116,6 @@ class ExpertPolicyAdapter:
     require_action_star: bool = True
     external_policy: Any | None = None
     deterministic: bool = True
-    obs_key: str = "observation"
     external_frame_stack: int = 0
     external_obs_history: np.ndarray | None = None
 
@@ -437,12 +434,10 @@ class _TabularQPolicy:
         return np.asarray(self._qtable[idx], dtype=np.float64)
 
 
-def _infer_external_frame_stack(*, policy: Any, obs_key: str) -> int:
+def _infer_external_frame_stack(*, policy: Any) -> int:
     obs_space = getattr(policy, "observation_space", None)
     shape = getattr(obs_space, "shape", None)
     if not isinstance(shape, tuple) or len(shape) != 3:
-        return 0
-    if obs_key != "observation_image":
         return 0
     channels = int(shape[0])
     return channels if channels > 1 else 0
@@ -464,7 +459,6 @@ def normalize_q_star_source_name(q_star_source: dict[str, Any] | None) -> str | 
 def build_q_star_source_adapter(
     env_id: str,
     q_star_source: dict[str, Any] | None,
-    obs_key: str = "observation",
     single_observation_space: Any | None = None,
 ) -> ExpertPolicyAdapter | None:
     """Build an :class:`ExpertPolicyAdapter` from a ``q_star_source`` config dict.
@@ -482,8 +476,6 @@ def build_q_star_source_adapter(
         env_id: Environment id; used when selecting the correct SB3 algo or table.
         q_star_source: Config dict with a canonical ``"provider"`` key. ``None``
             disables expert Q-values.
-        obs_key: Canonical observation key forwarded to the adapter (used for
-            frame-stack inference and observation pre-processing).
         single_observation_space: The env's ``single_observation_space``; used to
             infer ``obs_space_dims`` for multi-dimensional tabular Q-tables.
 
@@ -556,7 +548,6 @@ def build_q_star_source_adapter(
             require_action_star=False,
             external_policy=policy,
             deterministic=deterministic,
-            obs_key=obs_key,
             external_frame_stack=0,
         )
 
@@ -639,8 +630,7 @@ def build_q_star_source_adapter(
         require_action_star=False,
         external_policy=policy,
         deterministic=deterministic,
-        obs_key=obs_key,
-        external_frame_stack=_infer_external_frame_stack(policy=policy, obs_key=obs_key),
+        external_frame_stack=_infer_external_frame_stack(policy=policy),
     )
 
 

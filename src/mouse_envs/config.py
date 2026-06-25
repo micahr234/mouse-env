@@ -6,8 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-OBSERVATION_KINDS = ("continuous", "discrete", "image")
-
 
 @dataclass
 class EnvConfig:
@@ -57,9 +55,6 @@ class EnvConfig:
 
         env_fn: Zero-arg factory that returns a freshly built Gymnasium env. When
             set, ``id`` is used only for naming.
-        observation_kind: Force the observation channel (``"continuous"``,
-            ``"discrete"``, or ``"image"``). Defaults to auto-detection; required
-            for image envs.
         observation_indices: Mask dimensions on continuous-vector observations.
         reward_scale: Multiply the raw reward before it appears in outputs.
         reward_shift: Add to the (already scaled) reward.
@@ -76,7 +71,6 @@ class EnvConfig:
     render: bool = False
     q_star_source: dict[str, Any] | None = None
     env_fn: Callable[[], Any] | None = None
-    observation_kind: str | None = None
     observation_indices: list[int] | None = None
     reward_scale: float = 1.0
     reward_shift: float = 0.0

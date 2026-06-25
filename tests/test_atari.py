@@ -1,8 +1,7 @@
-"""Atari (ALE) tests — built through the general ``env_fn`` + ``observation_kind`` API.
+"""Atari (ALE) tests — built through the general ``env_fn`` API.
 
 mouse-env has no Atari-specific code. Atari is configured like any other env: build it in
-an ``env_fn`` factory (register ``ale_py``, ``gym.make``, then ``AtariPreprocessing``) and
-route the image observation with ``observation_kind="image"``.
+an ``env_fn`` factory (register ``ale_py``, ``gym.make``, then ``AtariPreprocessing``).
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ def test_atari_vector_preprocessing() -> None:
                 id="ALE/Pong-v5",
                 reset_seed=i,
                 episodes_per_task=5,
-                observation_kind="image",
                 env_fn=_pong_factory(
                     500,
                     preprocess_kwargs={"frame_skip": 4, "screen_size": 84, "noop_max": 0},
@@ -48,16 +46,15 @@ def test_atari_vector_preprocessing() -> None:
         ]
     )
     try:
-        assert env._env_instances[0].obs_key == "observation_image"
         outputs = env.step(env.sample_random_inputs())
         assert len(outputs) == 2
 
         batch = np.stack([r["observation"].numpy() for r in outputs])
         assert batch.shape == (2, 84, 84)
-        assert batch.dtype == np.float32
+        assert batch.dtype == np.uint8
 
         assert env.output_specs[0].observation.shape == (84, 84)
-        assert env.output_specs[0].observation.dtype == torch.float32
+        assert env.output_specs[0].observation.dtype == torch.uint8
 
         for r in outputs:
             assert r["time"].item() == 0
@@ -72,7 +69,6 @@ def test_atari_multi_step_rollout() -> None:
         id="ALE/Pong-v5",
         reset_seed=1,
         episodes_per_task=5,
-        observation_kind="image",
         env_fn=_pong_factory(500, preprocess_kwargs={"noop_max": 0}),
     )
     env = make_env(cfg)
@@ -81,7 +77,7 @@ def test_atari_multi_step_rollout() -> None:
         outputs = env.step(env.sample_random_inputs())
         assert outputs[0]["time"].item() >= 1
         assert "observation" in outputs[0]
-        assert outputs[0]["observation"].dtype == torch.float32
+        assert outputs[0]["observation"].dtype == torch.uint8
     finally:
         env.close()
 
@@ -91,7 +87,6 @@ def test_atari_discrete_action_sampling() -> None:
         id="ALE/Pong-v5",
         reset_seed=0,
         episodes_per_task=5,
-        observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs={"noop_max": 0}),
     )
     env = make_env(cfg)
@@ -110,7 +105,6 @@ def test_atari_without_preprocessing() -> None:
         id="ALE/Pong-v5",
         reset_seed=0,
         episodes_per_task=5,
-        observation_kind="image",
         env_fn=_pong_factory(100, preprocess_kwargs=None),
     )
     env = make_env(cfg)
