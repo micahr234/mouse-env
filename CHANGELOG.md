@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a playable Procedural FrozenLake notebook with D-pad controls and rendered output.
+
 ### Changed
 - `EnvConfig.reset_seed` is now the sole config field for mouse-env's internal Gymnasium reset seeding.
 

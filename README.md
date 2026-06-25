@@ -71,6 +71,7 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env instance names |
 | [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
 | [10 — RNG seeding control](examples/10_rng_seeding_control.ipynb) | `map_seed`; `reset_seed`; reproducible generated maps and resets |
+| [11 — Play Procedural FrozenLake](examples/11_play_procedural_frozenlake.ipynb) | D-pad controls and rendered output for manually playing generated lakes |
 
 ---
 
