@@ -48,6 +48,8 @@ class SyntheticEnv(gym.Env[int, int]):
     When sampling a random map (``map`` is ``None``), per-(state, action) rewards are drawn
     uniformly (half-open intervals): non-goal pairs use ``[reward_low, reward_high)``; goal pairs
     use ``[goal_reward_low, goal_reward_high)``. Equal lower and upper bounds yield a constant.
+    Pass ``options={"regenerate_map": True}`` to :meth:`reset` to sample a fresh
+    MDP for that reset.
 
     ``step_penalty`` is added to the reward on every :meth:`step` (including terminal steps).
     :meth:`compute_q_table` applies the same offset so ``q_star`` matches rollout rewards when
@@ -77,7 +79,7 @@ class SyntheticEnv(gym.Env[int, int]):
         emit_map: bool = True,
         step_penalty: float = 0.0,
         transition_prob: float = 0.5,
-        seed: int | None = None,
+        map_seed: int | None = None,
     ):
         """
         Args:
@@ -110,7 +112,7 @@ class SyntheticEnv(gym.Env[int, int]):
                 pair leads to a non-self-loop next state. The escape action
                 ``a = state % action_size`` is always a non-self-loop. Ignored when ``map``
                 is provided.
-            seed: Random seed for MDP sampling. ``None`` = non-deterministic.
+            map_seed: Random seed for MDP sampling. ``None`` = non-deterministic.
 
         Raises:
             ValueError: For invalid parameter combinations (e.g. ``reward_low > reward_high``,
@@ -135,6 +137,7 @@ class SyntheticEnv(gym.Env[int, int]):
         if not math.isfinite(sp):
             raise ValueError(f"step_penalty must be finite, got {step_penalty!r}.")
         self._step_penalty = sp
+        self._has_fixed_map = map is not None
         if map is None:
             if not (0.0 <= float(transition_prob) <= 1.0):
                 raise ValueError(f"transition_prob must be in [0, 1], got {transition_prob!r}.")
@@ -173,21 +176,17 @@ class SyntheticEnv(gym.Env[int, int]):
         self.gamma = 1.0
         self.min_distance = int(min_distance)
         self.max_tries = int(max_tries)
-        self._init_seed = seed
-        self._q_table_rng = np.random.default_rng(seed)
+        self._map_rng = np.random.default_rng(map_seed)
         self.observation_space = gym.spaces.Discrete(self.obs_size)
         self.action_space = gym.spaces.Discrete(self.action_size)
 
         self.map: dict[str, np.ndarray] = {}
-        self._map_dirty = True
+        self._map_initialized = False
+        self._map_dirty = False
         self._q_table: np.ndarray | None = None
         self._state = 0
-        if map is None:
-            self._build_random_mdp()
-        else:
+        if map is not None:
             self._load_env_map(map)
-        if self.emit_q_star:
-            self._refresh_q_table()
 
     def _map_payload_for_info(self) -> dict[str, Any]:
         return {k: np.array(v, copy=True) for k, v in self.map.items()}
@@ -238,6 +237,7 @@ class SyntheticEnv(gym.Env[int, int]):
         self.map["goal"] = np.array(goal, copy=True)
         self.map["reward"] = np.array(reward, copy=True)
         self.map["start"] = np.array(start, copy=True)
+        self._map_initialized = True
         self._map_dirty = True
 
     def _apply_transition_prob_to_sampled_map(self, rng: np.random.Generator) -> None:
@@ -261,7 +261,8 @@ class SyntheticEnv(gym.Env[int, int]):
                     g[s, a] = False
 
     def _build_random_mdp(self) -> None:
-        rng = np.random.default_rng(self._init_seed)
+        rng = self._map_rng
+        self._q_table = None
         for _ in range(self.max_tries):
             self.map["transition"] = rng.integers(
                 low=0,
@@ -314,6 +315,7 @@ class SyntheticEnv(gym.Env[int, int]):
                     rng=rng, low=self.goal_reward_low, high=self.goal_reward_high, size=n_goal
                 )
             self.map["reward"] = reward.astype(np.float64)
+            self._map_initialized = True
             self._map_dirty = True
             return
         raise ValueError(
@@ -363,6 +365,7 @@ class SyntheticEnv(gym.Env[int, int]):
         Returns:
             ``float64`` array of shape ``(obs_size, action_size)`` — optimal Q-values.
         """
+        self._require_map_initialized()
         return solve_tabular_mdp(
             reward=self.map["reward"],
             transition=self.map["transition"],
@@ -377,6 +380,14 @@ class SyntheticEnv(gym.Env[int, int]):
         if self._q_table is not None:
             return
         self._q_table = self.compute_q_table()
+
+    def _require_map_initialized(self) -> None:
+        if not self._map_initialized:
+            raise RuntimeError("SyntheticEnv map is not initialized; call reset() before using the map.")
+
+    def _ensure_map_initialized(self) -> None:
+        if not self._map_initialized:
+            self._build_random_mdp()
 
     def _optimal_action_for_obs(self, obs: int) -> int:
         if self._q_table is None:
@@ -405,6 +416,16 @@ class SyntheticEnv(gym.Env[int, int]):
         options: dict[str, Any] | None = None,
     ) -> tuple[int, dict[str, Any]]:
         super().reset(seed=seed)
+        reset_options = dict(options or {})
+        regenerate_map = bool(reset_options.pop("regenerate_map", False))
+        if regenerate_map and self._has_fixed_map:
+            raise ValueError("reset option regenerate_map=True requires map=None.")
+        if regenerate_map:
+            self._build_random_mdp()
+        else:
+            self._ensure_map_initialized()
+        if self.emit_q_star:
+            self._refresh_q_table()
         start_states = np.where(self.map["start"])[0]
         self._state = int(start_states[self.np_random.integers(0, start_states.size)])
         info: dict[str, Any] = {}
@@ -417,6 +438,7 @@ class SyntheticEnv(gym.Env[int, int]):
         return int(self._state), info
 
     def step(self, action: int) -> tuple[int, float, bool, bool, dict[str, Any]]:
+        self._require_map_initialized()
         a = int(action)
         if a < 0 or a >= self.action_size:
             raise ValueError(f"action {a} is out of bounds for Discrete({self.action_size}).")

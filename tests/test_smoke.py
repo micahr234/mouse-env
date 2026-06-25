@@ -46,8 +46,8 @@ def test_cartpole_step_contract() -> None:
             assert "id" not in r
             assert "name" not in r
             assert "action" not in r
-        for per_slot in env.tracker.episode_cum_rewards:
-            assert all(isinstance(v, float) for v in per_slot)
+        for per_env in env.tracker.episode_cum_rewards:
+            assert all(isinstance(v, float) for v in per_env)
     finally:
         env.close()
 
@@ -242,6 +242,233 @@ def test_synthetic_vector() -> None:
         env.close()
 
 
+def test_procedural_frozenlake_can_regenerate_map_from_episode_reset_options() -> None:
+    cfg = EnvConfig(
+        id="Procedural-FrozenLake-v1",
+        seed=7,
+        num_envs=1,
+        episodes_per_task=5,
+        episode_reset_options={"regenerate_map": True},
+        kwargs={
+            "emit_map": True,
+            "hole_prob": 0.0,
+            "max_episode_steps": 1,
+        },
+    )
+    env = make_env(cfg)
+    try:
+        first = env.step(env.sample_random_inputs())[0]
+        terminal = env.step(env.sample_random_inputs())[0]
+        assert terminal["done"].item() != 0
+        reset = env.step(env.sample_random_inputs())[0]
+
+        assert "info_map" in first
+        assert "info_map" in reset
+        assert first["info_map"] != reset["info_map"]
+    finally:
+        env.close()
+
+
+def test_synthetic_can_regenerate_map_from_episode_reset_options() -> None:
+    cfg = EnvConfig(
+        id="SyntheticEnv-v1",
+        seed=7,
+        num_envs=1,
+        episodes_per_task=5,
+        episode_reset_options={"regenerate_map": True},
+        kwargs={
+            "obs_size": 8,
+            "action_size": 3,
+            "max_episode_steps": 1,
+        },
+    )
+    env = make_env(cfg)
+    try:
+        first = env.step(env.sample_random_inputs())[0]
+        terminal = env.step(env.sample_random_inputs())[0]
+        assert terminal["done"].item() != 0
+        reset = env.step(env.sample_random_inputs())[0]
+
+        assert "info_map" in first
+        assert "info_map" in reset
+        assert first["info_map"] != reset["info_map"]
+    finally:
+        env.close()
+
+
+def test_first_party_random_maps_are_lazy_until_reset() -> None:
+    from mouse_envs.worlds.procedural_frozenlake import ProceduralFrozenLakeEnv
+    from mouse_envs.worlds.synthetic import SyntheticEnv
+
+    synthetic = SyntheticEnv(obs_size=8, action_size=3, map_seed=1)
+    assert synthetic.map == {}
+    assert not synthetic._map_initialized
+    _, synthetic_info = synthetic.reset(seed=2)
+    assert synthetic._map_initialized
+    assert "map" in synthetic_info
+
+    frozen = ProceduralFrozenLakeEnv(map_seed=1, emit_map=True)
+    assert frozen._gridmap is None
+    _, frozen_info = frozen.reset(seed=2)
+    assert frozen._gridmap is not None
+    assert "map" in frozen_info
+
+
+def test_map_seed_is_independent_from_reset_seed() -> None:
+    from mouse_envs.worlds.synthetic import SyntheticEnv
+
+    env_a = SyntheticEnv(obs_size=8, action_size=3, map_seed=11)
+    env_b = SyntheticEnv(obs_size=8, action_size=3, map_seed=11)
+    try:
+        _, info_a = env_a.reset(seed=21)
+        _, info_b = env_b.reset(seed=22)
+        assert info_a["map"] == info_b["map"]
+    finally:
+        env_a.close()
+        env_b.close()
+
+
+def test_make_env_stream_seeds_are_independent() -> None:
+    def _first_map(*, map_seed: int, reset_seed: int) -> str:
+        cfg = EnvConfig(
+            id="SyntheticEnv-v1",
+            seed=0,
+            num_envs=1,
+            reset_seed=reset_seed,
+            kwargs={"obs_size": 8, "action_size": 7, "map_seed": map_seed},
+        )
+        env = make_env(cfg)
+        try:
+            return env.step(env.sample_random_inputs())[0]["info_map"]
+        finally:
+            env.close()
+
+    assert _first_map(map_seed=3, reset_seed=4) == _first_map(map_seed=3, reset_seed=40)
+    assert _first_map(map_seed=3, reset_seed=4) != _first_map(map_seed=30, reset_seed=4)
+
+
+def test_action_spaces_can_be_seeded_for_random_inputs() -> None:
+    def _sampled_actions(*, reset_seed: int, action_space_seed: int) -> list[int]:
+        cfg = EnvConfig(
+            id="SyntheticEnv-v1",
+            seed=0,
+            num_envs=1,
+            reset_seed=reset_seed,
+            kwargs={"obs_size": 8, "action_size": 7, "map_seed": 1},
+        )
+        env = make_env(cfg)
+        try:
+            assert len(env.action_spaces) == 1
+            env.action_spaces[0].seed(action_space_seed)
+            return [int(env.sample_random_inputs()[0]["action"].item()) for _ in range(12)]
+        finally:
+            env.close()
+
+    assert _sampled_actions(reset_seed=10, action_space_seed=20) == _sampled_actions(
+        reset_seed=11, action_space_seed=20
+    )
+    assert _sampled_actions(reset_seed=10, action_space_seed=20) != _sampled_actions(
+        reset_seed=10, action_space_seed=21
+    )
+
+
+def test_procedural_frozenlake_can_regenerate_map_at_task_boundary_only() -> None:
+    from mouse_envs.format import DONE_EPISODE_TRUNCATED, DONE_TASK_TRUNCATED
+
+    cfg = EnvConfig(
+        id="Procedural-FrozenLake-v1",
+        seed=7,
+        num_envs=1,
+        episodes_per_task=2,
+        task_reset_options={"regenerate_map": True},
+        kwargs={
+            "emit_map": True,
+            "hole_prob": 0.0,
+            "max_episode_steps": 1,
+        },
+    )
+    env = make_env(cfg)
+    try:
+        initial = env.step(env.sample_random_inputs())[0]
+        first_terminal = env.step(env.sample_random_inputs())[0]
+        episode_reset = env.step(env.sample_random_inputs())[0]
+        second_terminal = env.step(env.sample_random_inputs())[0]
+        task_reset = env.step(env.sample_random_inputs())[0]
+
+        assert first_terminal["done"].item() == DONE_EPISODE_TRUNCATED
+        assert second_terminal["done"].item() == DONE_TASK_TRUNCATED
+        assert "info_map" in initial
+        assert "info_map" not in episode_reset
+        assert "info_map" in task_reset
+        assert initial["info_map"] != task_reset["info_map"]
+    finally:
+        env.close()
+
+
+def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
+    cfg = EnvConfig(
+        id="Procedural-FrozenLake-v1",
+        seed=7,
+        num_envs=1,
+        episodes_per_task=1,
+        task_reset_options={"regenerate_map": True},
+        kwargs={
+            "emit_map": True,
+            "min_width": 3,
+            "max_width": 5,
+            "min_height": 3,
+            "max_height": 6,
+            "max_episode_steps": 1,
+        },
+    )
+    env = make_env(cfg)
+    try:
+        space = env._env_instances[0]._env.observation_space
+        assert isinstance(space, gym.spaces.Discrete)
+        assert space.n == 30
+
+        env.step(env.sample_random_inputs())
+        env.step(env.sample_random_inputs())
+        env.step(env.sample_random_inputs())
+
+        space = env._env_instances[0]._env.observation_space
+        assert isinstance(space, gym.spaces.Discrete)
+        assert space.n == 30
+    finally:
+        env.close()
+
+
+def _task_regenerated_frozenlake_maps(seed: int) -> list[str]:
+    cfg = EnvConfig(
+        id="Procedural-FrozenLake-v1",
+        seed=seed,
+        num_envs=1,
+        episodes_per_task=1,
+        task_reset_options={"regenerate_map": True},
+        kwargs={
+            "emit_map": True,
+            "map_seed": seed,
+            "max_episode_steps": 1,
+        },
+    )
+    env = make_env(cfg)
+    maps: list[str] = []
+    try:
+        for _ in range(3):
+            reset_frame = env.step([{"action": torch.tensor(0)}])[0]
+            maps.append(reset_frame["info_map"])
+            terminal = env.step([{"action": torch.tensor(0)}])[0]
+            assert terminal["done"].item() != 0
+        return maps
+    finally:
+        env.close()
+
+
+def test_task_regenerated_maps_are_seed_reproducible() -> None:
+    assert _task_regenerated_frozenlake_maps(7) == _task_regenerated_frozenlake_maps(7)
+    assert _task_regenerated_frozenlake_maps(7) != _task_regenerated_frozenlake_maps(8)
+
+
 def test_partial_observability() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
@@ -346,7 +573,7 @@ def test_observation_kind_override() -> None:
     )
     env = make_env(cfg)
     try:
-        assert env._slots[0].obs_key == "observation_discrete"
+        assert env._env_instances[0].obs_key == "observation_discrete"
         outputs = _rollout(env, steps=2)
         assert "observation" in outputs[0]
         assert env.output_specs[0].observation.dtype == torch.int64

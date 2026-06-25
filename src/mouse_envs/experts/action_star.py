@@ -73,7 +73,7 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
 def action_star_to_continuous_q_star(
     actions: np.ndarray, num_envs: int, action_dim: int
 ) -> np.ndarray:
-    """Surface continuous expert action vectors in the ``q_star`` slot.
+    """Surface continuous expert action vectors in the ``q_star`` field.
 
     Box action spaces have no Q-value-over-actions, so the expert's target action
     vector itself is exposed as ``env_q_star``. Produces a

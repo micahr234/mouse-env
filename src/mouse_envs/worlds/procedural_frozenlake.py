@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import Mapping
 from typing import Any
 
+import gymnasium as gym
 import numpy as np
 from gymnasium.envs.registration import register, registry
 from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
@@ -31,6 +32,8 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
     ``{"board": [...], "rewards": {...}}`` (see :func:`~mouse_envs.utils.to_json_str`).
 
     Random maps place ``S`` / ``G`` and holes per ``hole_prob`` (see :meth:`_generate_map`).
+    Pass ``options={"regenerate_map": True}`` to :meth:`reset` to sample a fresh
+    map for that reset.
 
     Map validity uses :meth:`_find_path_to_goal` so the shortest path from each ``S`` meets
     ``min_hops``. When ``emit_q_star`` is True, labels use :func:`~mouse_envs.experts.solve_tabular_mdp`
@@ -40,10 +43,6 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
     terminal transitions). Value iteration includes the same offset so ``q_star`` matches rollout
     rewards when ``emit_q_star`` is True.
 
-    When ``first_visit_bonus`` is non-zero and ``emit_q_star`` is True, each finite ``info["q_star"][a]``
-    is increased by that amount for every action ``a`` that, under :attr:`P`, has positive probability
-    of transitioning from the current state to a state not yet visited on this env instance (the
-    visited set is cleared only at construction; supervision only; :meth:`compute_q_table` is unchanged).
     """
 
     def __init__(
@@ -67,8 +66,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
         goal_reward_low: float = 1.0,
         goal_reward_high: float = 1.0,
         step_penalty: float = 0.0,
-        seed: int | None = None,
-        first_visit_bonus: float = 0.0,
+        map_seed: int | None = None,
     ):
         """
         Args:
@@ -104,10 +102,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
                 a fixed reward.
             step_penalty: Scalar added to the reward on every step (e.g. ``-0.01`` for a
                 step cost). Also applied inside value iteration so ``q_star`` matches.
-            seed: Random seed for map generation and Q-table RNG. ``None`` = non-deterministic.
-            first_visit_bonus: Bonus added to ``q_star[a]`` for any action that has positive
-                probability of reaching an unvisited state. Applied at supervision time only;
-                does not affect ``compute_q_table``.
+            map_seed: Random seed for map generation. ``None`` = non-deterministic.
         """
         lo, hi = float(goal_reward_low), float(goal_reward_high)
         if lo > hi:
@@ -115,49 +110,88 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
         self._goal_reward_low = lo
         self._goal_reward_high = hi
         self._step_penalty = float(step_penalty)
-        self._first_visit_bonus = float(first_visit_bonus)
-        self._visited_states: set[int] = set()
         self.emit_q_star = bool(emit_q_star)
         self.emit_map = bool(emit_map)
+        self._has_fixed_map = fixed_map is not None
         self.gamma = 1.0
-        self._map_rng = random.Random(seed)
-        self._q_table_rng = np.random.default_rng(seed)
+        self._render_mode = render_mode
+        self._is_slippery = bool(is_slippery)
+        self._generation_config = {
+            "min_hops": int(min_hops),
+            "max_tries": int(max_tries),
+            "min_width": int(min_width),
+            "max_width": int(max_width),
+            "min_height": int(min_height),
+            "max_height": int(max_height),
+            "hole_prob": float(hole_prob),
+            "start_pos": start_pos,
+            "start_pos_prob": start_pos_prob,
+            "goal_pos": goal_pos,
+            "goal_pos_prob": goal_pos_prob,
+        }
+        self._map_rng = random.Random(map_seed)
+        self._gridmap: list[str] | None = None
+        self._goal_rewards_by_state: dict[int, float] = {}
+        self._map_info: str | None = None
+        self._map_dirty = False
+        self._q_table: np.ndarray | None = None
+        self.action_space = gym.spaces.Discrete(4)
         fixed_rewards: Mapping[int | str, float] | None = None
         if fixed_map is not None:
-            self._gridmap, fixed_rewards = self._parse_fixed_map_spec(fixed_map)
+            gridmap, fixed_rewards = self._parse_fixed_map_spec(fixed_map)
+            self._observation_space_n = len(gridmap) * len(gridmap[0])
+            self._initialize_frozenlake_map(gridmap=gridmap, reward_overrides=fixed_rewards)
         else:
-            self._gridmap = self._generate_valid_map(
-                self._map_rng,
-                min_hops=int(min_hops),
-                max_tries=int(max_tries),
-                min_width=int(min_width),
-                max_width=int(max_width),
-                min_height=int(min_height),
-                max_height=int(max_height),
-                hole_prob=float(hole_prob),
-                start_pos=start_pos,
-                start_pos_prob=start_pos_prob,
-                goal_pos=goal_pos,
-                goal_pos_prob=goal_pos_prob,
-            )
+            self._observation_space_n = int(max_width) * int(max_height)
+            self.observation_space = gym.spaces.Discrete(self._observation_space_n)
+
+    def _restore_max_observation_space(self) -> None:
+        self.observation_space = gym.spaces.Discrete(self._observation_space_n)
+
+    def _initialize_frozenlake_map(
+        self,
+        *,
+        gridmap: list[str],
+        reward_overrides: Mapping[int | str, float] | None,
+    ) -> None:
+        self._gridmap = gridmap
         self._goal_rewards_by_state = self._compute_goal_rewards_for_map(
             gridmap=self._gridmap,
             rng=self._map_rng,
-            overrides=fixed_rewards,
+            overrides=reward_overrides,
         )
-        super().__init__(
-            render_mode=render_mode,
+        FrozenLakeEnv.__init__(
+            self,
+            render_mode=self._render_mode,
             desc=self._gridmap,
-            is_slippery=bool(is_slippery),
+            is_slippery=self._is_slippery,
         )
+        self._restore_max_observation_space()
         self._map_info = to_json_str(self._make_map_info_dict())
         self._map_dirty = True
-        self._q_table: np.ndarray | None = None
+        self._q_table = None
+
+    def _regenerate_map(self) -> None:
+        gridmap = self._generate_valid_map(
+            self._map_rng,
+            **self._generation_config,
+        )
+        self._initialize_frozenlake_map(gridmap=gridmap, reward_overrides=None)
+
+    def _ensure_map_initialized(self) -> None:
+        if self._gridmap is None:
+            self._regenerate_map()
+
+    def _require_map_initialized(self) -> None:
+        if self._gridmap is None:
+            raise RuntimeError(
+                "ProceduralFrozenLakeEnv map is not initialized; call reset() before using the map."
+            )
 
     def _make_map_info_dict(self) -> dict[str, Any]:
         """Structured map payload; serialized to JSON for ``info["map"]`` when ``emit_map`` is True."""
         return {
-            "board": list(self._gridmap),
+            "board": list(self._gridmap or []),
             "rewards": {
                 str(k): float(v) for k, v in sorted(self._goal_rewards_by_state.items())
             },
@@ -415,6 +449,7 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
             ``float64`` array of shape ``(num_states, 4)`` — optimal Q-values for
             every (state, action) pair under the current map.
         """
+        self._require_map_initialized()
         n_s = int(self.nrow * self.ncol)
         return solve_tabular_mdp(
             P=self.P,
@@ -450,34 +485,16 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
             return fallback
         return np.asarray(self._q_table[state], dtype=np.float64).copy()
 
-    def _q_star_for_obs_with_first_visit(self, obs: int) -> np.ndarray:
-        """Return ``q_star`` for ``obs``, adding :attr:`_first_visit_bonus` to each action that can
-        reach an unvisited successor (see class docstring)."""
-        q = self._q_star_for_obs(obs)
-        state = int(obs)
-        self._visited_states.add(state)
-        b = self._first_visit_bonus
-        if b == 0.0:
-            return q
-        out = q.copy()
-        P = self.P
-        n_a = int(getattr(self.action_space, "n", 0))
-        visited = self._visited_states
-        for a in range(n_a):
-            leads_to_new = False
-            for trans in P[state][a]:
-                prob, next_s, _, _ = trans
-                if float(prob) <= 0.0:
-                    continue
-                if int(next_s) not in visited:
-                    leads_to_new = True
-                    break
-            if leads_to_new:
-                out[a] = out[a] + b
-        return out
-
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
-        obs, info = super().reset(seed=seed, options=options)
+        reset_options = dict(options or {})
+        regenerate_map = bool(reset_options.pop("regenerate_map", False))
+        if regenerate_map and self._has_fixed_map:
+            raise ValueError("reset option regenerate_map=True requires fixed_map=None.")
+        if regenerate_map:
+            self._regenerate_map()
+        else:
+            self._ensure_map_initialized()
+        obs, info = super().reset(seed=seed, options=reset_options or None)
         info = dict[str, Any](info)
         if self._map_dirty:
             if self.emit_map:
@@ -486,10 +503,11 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
                 self._q_table = self.compute_q_table()
             self._map_dirty = False
         if self.emit_q_star:
-            info["q_star"] = self._q_star_for_obs_with_first_visit(int(obs))
+            info["q_star"] = self._q_star_for_obs(int(obs))
         return obs, info
 
     def step(self, a: Any):
+        self._require_map_initialized()
         obs, reward, terminated, truncated, info = super().step(a)
         if terminated and self._landed_on_goal(int(obs)):
             reward = float(self._goal_rewards_by_state[int(obs)])
@@ -502,8 +520,13 @@ class ProceduralFrozenLakeEnv(FrozenLakeEnv):
                 self._q_table = self.compute_q_table()
             self._map_dirty = False
         if self.emit_q_star:
-            info["q_star"] = self._q_star_for_obs_with_first_visit(int(obs))
+            info["q_star"] = self._q_star_for_obs(int(obs))
         return obs, reward, terminated, truncated, info
+
+    def close(self) -> None:
+        if self._gridmap is None:
+            return
+        super().close()
 
 
 def ensure_procedural_frozenlake_registered() -> None:

@@ -122,8 +122,6 @@ class EnvIdentityWrapper(gym.Wrapper):
     def reset(self, **kwargs: Any):
         if not self._initial_reset_done:
             self._initial_reset_done = True
-            if "seed" not in kwargs:
-                kwargs["seed"] = self.env_seed
         return self.env.reset(**kwargs)
 
 
@@ -222,15 +220,22 @@ class QStarWrapper(gym.Wrapper):
         return obs, reward, terminated, truncated, self._attach(obs, info, done=done)
 
 
-class ConstructionSeedWrapper(gym.Wrapper):
-    """Control construction-time and per-episode reset seeds for custom MDPs."""
+class SeedStreamWrapper(gym.Wrapper):
+    """Control mouse-env's internal reset stream."""
 
-    def __init__(self, env_fn: Callable[[int], gym.Env], seed: int):
-        super().__init__(env_fn(seed))
-        self._rng = np.random.default_rng(seed)
+    def __init__(
+        self,
+        env_fn: Callable[[], gym.Env],
+        *,
+        reset_seed: int | None,
+    ):
+        super().__init__(env_fn())
+        self._reset_rng = np.random.default_rng(reset_seed)
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
-        return self.env.reset(seed=int(self._rng.integers(0, 2**31)), options=options)
+        if seed is None:
+            seed = int(self._reset_rng.integers(0, 2**31))
+        return self.env.reset(seed=seed, options=options)
 
 
 # -----------------------------------------------------------------------------

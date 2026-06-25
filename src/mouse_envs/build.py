@@ -9,10 +9,10 @@ import gymnasium as gym
 from mouse_envs.config import EnvConfig
 from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
 from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
-from mouse_envs.format import MouseEnv, _Slot
+from mouse_envs.format import MouseEnv, _EnvInstance
 from mouse_envs.wrappers import (
-    ConstructionSeedWrapper,
     ObservationSliceWrapper,
+    SeedStreamWrapper,
     build_single_env,
 )
 
@@ -30,8 +30,9 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
 
     Pass a single :class:`EnvConfig` for the common single-env case, or a list to
     combine multiple heterogeneous environments into one :class:`MouseEnv`. Each
-    ``EnvConfig.num_envs=N`` expands to N independent single-env slots. All slots
-    are stepped sequentially; outputs form a flat list indexed by slot.
+    ``EnvConfig.num_envs=N`` expands to N independent single-env instances. All
+    env instances are stepped sequentially; outputs form a flat list indexed by
+    env.
 
     Usage — single env::
 
@@ -53,14 +54,14 @@ def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
     """
     if isinstance(configs, EnvConfig):
         configs = [configs]
-    slots: list[_Slot] = []
+    env_instances: list[_EnvInstance] = []
     for cfg in configs:
-        slots.extend(_make_slots(cfg))
-    return MouseEnv(slots)
+        env_instances.extend(_make_env_instances(cfg))
+    return MouseEnv(env_instances)
 
 
-def _make_slots(config: EnvConfig) -> list[_Slot]:
-    """Expand one :class:`EnvConfig` into a flat list of :class:`_Slot` instances."""
+def _make_env_instances(config: EnvConfig) -> list[_EnvInstance]:
+    """Expand one :class:`EnvConfig` into a flat list of single-env instances."""
     if config.num_envs < 1:
         raise ValueError(f"num_envs must be >= 1, got {config.num_envs}.")
 
@@ -72,36 +73,32 @@ def _make_slots(config: EnvConfig) -> list[_Slot]:
 
     env_kwargs = {} if config.env_fn is not None else _prepare_plain_env_kwargs(config)
 
-    if config.env_fn is None and config.id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID):
-        clean_kwargs = dict(env_kwargs)
-        clean_kwargs.pop("seed", None)
-    else:
-        clean_kwargs = env_kwargs
-
-    slots: list[_Slot] = []
+    env_instances: list[_EnvInstance] = []
     for i in range(config.num_envs):
         name = f"{name_base}_{i}"
-        slot_seed = config.seed + i
+        env_seed = config.seed + i
 
         env = build_single_env(
-            env_fn=lambda idx=i: _make_plain_single_env(config, idx, env_kwargs=clean_kwargs),
+            env_fn=lambda idx=i: _make_plain_single_env(config, idx, env_kwargs=env_kwargs),
             env_id=config.id,
             name=name,
-            seed=slot_seed,
+            seed=env_seed,
             observation_kind=config.observation_kind,
             q_star_source=resolved_q_star_source,
         )
-        slots.append(
-            _Slot(
+        env_instances.append(
+            _EnvInstance(
                 env=env,
                 name=name,
                 reset_reward=config.reset_reward,
+                episode_reset_options=config.episode_reset_options,
+                task_reset_options=config.task_reset_options,
                 reward_scale=config.reward_scale,
                 reward_shift=config.reward_shift,
                 episodes_per_task=config.episodes_per_task,
             )
         )
-    return slots
+    return env_instances
 
 
 def _prepare_plain_env_kwargs(config: EnvConfig) -> dict[str, Any]:
@@ -135,18 +132,18 @@ def _make_plain_single_env(
     *,
     env_kwargs: dict[str, Any],
 ) -> gym.Env:
-    mdp_seed = config.seed + index
-    seeded_at_construction = config.id in (SYNTHETIC_ENV_ID, PROCEDURAL_FROZENLAKE_ENV_ID)
+    reset_seed = (config.reset_seed if config.reset_seed is not None else config.seed) + index
 
-    def env_fn(s: int) -> gym.Env:
+    def env_fn() -> gym.Env:
         if config.env_fn is not None:
             return config.env_fn()
         kw = dict(env_kwargs)
-        if seeded_at_construction:
-            kw["seed"] = s
         return gym.make(config.id, **kw)
 
-    env = ConstructionSeedWrapper(env_fn, seed=mdp_seed)
+    env = SeedStreamWrapper(
+        env_fn,
+        reset_seed=reset_seed,
+    )
     if config.observation_indices is not None:
         env = ObservationSliceWrapper(env=env, indices=config.observation_indices)
     return env

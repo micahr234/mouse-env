@@ -44,7 +44,7 @@ def test_atari_vector_preprocessing() -> None:
     )
     env = make_env(cfg)
     try:
-        assert env._slots[0].obs_key == "observation_image"
+        assert env._env_instances[0].obs_key == "observation_image"
         outputs = env.step(env.sample_random_inputs())
         assert len(outputs) == 2
 

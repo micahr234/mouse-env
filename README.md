@@ -54,7 +54,7 @@ for _ in range(1000):
     outputs = env.step(inputs)
 
 # Episode stats accumulate in env.tracker automatically
-print(env.tracker.episode_cum_rewards)  # list[list[float]] — per slot
+print(env.tracker.episode_cum_rewards)  # list[list[float]] — per env instance
 env.close()
 ```
 
@@ -69,8 +69,9 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
 | [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
 | [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `env_q_star`; tabular experiments |
-| [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env slot names |
+| [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env instance names |
 | [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
+| [10 — RNG seeding control](examples/10_rng_seeding_control.ipynb) | `map_seed`; `reset_seed`; reproducible generated maps and resets |
 
 ---
 
@@ -80,15 +81,17 @@ There is no public rollout-time `reset()` call. The first `step()` quietly perfo
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
-`step()` returns a single flat `list[dict]` of **outputs** — one entry per slot. Each output dict contains model-visible training data: an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields.
+`step()` returns a single flat `list[dict]` of **outputs** — one entry per env instance. Each output dict contains model-visible training data: an `observation` tensor, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields.
 
-`inputs` is a flat `list[dict]` — one dict per slot, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for slot `i`; use `env.output_specs[i]` for the full output contract.
+`inputs` is a flat `list[dict]` — one dict per env instance, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for env index `i`; use `env.output_specs[i]` for the full output contract.
+
+Underlying Gymnasium action spaces are available as `env.action_spaces[i]`. For example, call `env.action_spaces[i].seed(...)` to control `action_space.sample()` using the standard Gymnasium API.
 
 **Episode statistics** are kept separate from the per-step stream and are accumulated automatically in `env.tracker` (a `MetricsTracker`):
 
 ```python
-env.tracker.episode_cum_rewards   # list[list[float]] — per-slot raw cumulative returns
-env.tracker.episode_lengths       # list[list[float]] — per-slot episode step counts
+env.tracker.episode_cum_rewards   # list[list[float]] — per-env raw cumulative returns
+env.tracker.episode_lengths       # list[list[float]] — per-env episode step counts
 env.tracker.clear()               # wipe accumulated data between evaluation runs
 ```
 
@@ -125,12 +128,15 @@ mouse-env also includes a couple of custom environments. Other envs that need th
 
 * **ID:** `Procedural-FrozenLake-v1`
 * Random valid grid generation: size, holes, start/goal, and optional per-goal rewards.
+* Random maps are generated lazily on the first reset, not during construction. By default, each env instance keeps one generated map across resets. Pass `episode_reset_options={"regenerate_map": True}` to generate a fresh map on every episode reset, or `task_reset_options={"regenerate_map": True}` to regenerate only when a new task starts.
+* Variable-size random maps expose a stable observation space sized to the largest possible map (`max_width * max_height`), so output specs do not change after regeneration.
 * Example: [examples/09_procedural_frozenlake.ipynb](examples/09_procedural_frozenlake.ipynb)
 
 ### Synthetic Environment
 
 * **ID:** `SyntheticEnv-v1`
 * Random finite discrete MDP for controlled tabular experiments.
+* Random MDP maps are generated lazily on the first reset, not during construction. By default, each env instance keeps one generated MDP across resets. Pass `episode_reset_options={"regenerate_map": True}` to sample a fresh MDP on every episode reset, or `task_reset_options={"regenerate_map": True}` to regenerate only when a new task starts.
 * Example: [examples/07_synthetic_env.ipynb](examples/07_synthetic_env.ipynb)
 
 ---
@@ -192,6 +198,17 @@ cfg = EnvConfig(id="my-cartpole", seed=0, num_envs=4, episodes_per_task=5, env_f
 ```
 
 This is also how you apply custom Gymnasium wrappers (preprocessing, observation transforms, etc.): wrap inside your factory.
+
+### Reset options and seeding
+
+Use `episode_reset_options` to pass a dict to every internal `env.reset(options=...)`. Use `task_reset_options` for options that apply only when the reset starts a new task; these are overlaid on top of `episode_reset_options`.
+
+`EnvConfig.seed` is the convenience base seed. Each env instance derives mouse-env reset seeds from `seed + env_index` unless `reset_seed` is set:
+
+* `kwargs={"map_seed": ...}` controls first-party procedural map/MDP generation (`SyntheticEnv-v1` and `Procedural-FrozenLake-v1`). It is an env-specific constructor argument, not a base `EnvConfig` field.
+* `reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.
+
+Use these seeds when you want to hold one source of randomness fixed while varying another. For random action sampling, use the normal Gymnasium action-space API through `env.action_spaces[i]`. See [examples/10_rng_seeding_control.ipynb](examples/10_rng_seeding_control.ipynb) for a runnable walkthrough.
 
 ### Observation routing (`observation_kind`)
 

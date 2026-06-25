@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
+from unittest.mock import patch
 
 import gymnasium as gym
 import numpy as np
@@ -13,13 +14,13 @@ from stable_baselines3 import PPO
 
 @pytest.fixture(scope="session")
 def cartpole_ppo_zip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Tiny locally trained PPO checkpoint — avoids Hugging Face downloads."""
+    """Tiny local PPO checkpoint — avoids Hugging Face downloads."""
     root = tmp_path_factory.mktemp("sb3_fixtures")
     path = root / "cartpole_ppo"
     env = gym.make("CartPole-v1")
-    model = PPO("MlpPolicy", env, n_steps=64, batch_size=64, verbose=0)
-    model.learn(total_timesteps=256)
-    model.save(str(path))
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=64, verbose=0, device="cpu")
+    with patch("torch.cuda.is_available", return_value=False):
+        model.save(str(path))
     env.close()
     zip_path = path.with_suffix(".zip")
     assert zip_path.is_file()
@@ -28,13 +29,13 @@ def cartpole_ppo_zip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="session")
 def pendulum_ppo_zip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Tiny locally trained PPO checkpoint on a Box action env (continuous actions)."""
+    """Tiny local PPO checkpoint on a Box action env (continuous actions)."""
     root = tmp_path_factory.mktemp("sb3_continuous_fixtures")
     path = root / "pendulum_ppo"
     env = gym.make("Pendulum-v1")
-    model = PPO("MlpPolicy", env, n_steps=64, batch_size=64, verbose=0)
-    model.learn(total_timesteps=256)
-    model.save(str(path))
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=64, verbose=0, device="cpu")
+    with patch("torch.cuda.is_available", return_value=False):
+        model.save(str(path))
     env.close()
     zip_path = path.with_suffix(".zip")
     assert zip_path.is_file()

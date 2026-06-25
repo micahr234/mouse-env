@@ -105,7 +105,7 @@ class StepOutput(TypedDict, total=False):
 
 
 class MetricsTracker:
-    """Accumulates per-slot episode statistics; attached to :class:`MouseEnv` as ``.tracker``.
+    """Accumulates per-env episode statistics; attached to :class:`MouseEnv` as ``.tracker``.
 
     ``MouseEnv.step()`` feeds completed-episode results automatically. Call
     :meth:`clear` to wipe all accumulated data (e.g. between evaluation runs).
@@ -113,46 +113,47 @@ class MetricsTracker:
     Attributes
     ----------
     episode_cum_rewards:
-        Per-slot list of raw (unscaled) cumulative rewards for every episode
+        Per-env list of raw (unscaled) cumulative rewards for every episode
         completed since the last :meth:`clear` call. Empty lists until an
-        episode finishes in that slot.
+        episode finishes in that env instance.
     episode_lengths:
-        Per-slot list of episode step counts for every completed episode since
+        Per-env list of episode step counts for every completed episode since
         the last :meth:`clear` call.
     """
 
-    def __init__(self, num_slots: int) -> None:
-        self._num_slots = num_slots
-        self._episode_cum_rewards: list[list[float]] = [[] for _ in range(num_slots)]
-        self._episode_lengths: list[list[float]] = [[] for _ in range(num_slots)]
+    def __init__(self, num_envs: int) -> None:
+        self._num_envs = num_envs
+        self._episode_cum_rewards: list[list[float]] = [[] for _ in range(num_envs)]
+        self._episode_lengths: list[list[float]] = [[] for _ in range(num_envs)]
 
-    def _record(self, slot: int, cum_reward: float, length: float) -> None:
-        self._episode_cum_rewards[slot].append(cum_reward)
-        self._episode_lengths[slot].append(length)
+    def _record(self, env_index: int, cum_reward: float, length: float) -> None:
+        self._episode_cum_rewards[env_index].append(cum_reward)
+        self._episode_lengths[env_index].append(length)
 
     def clear(self) -> None:
-        """Wipe all accumulated episode data for every slot."""
-        self._episode_cum_rewards = [[] for _ in range(self._num_slots)]
-        self._episode_lengths = [[] for _ in range(self._num_slots)]
+        """Wipe all accumulated episode data for every env instance."""
+        self._episode_cum_rewards = [[] for _ in range(self._num_envs)]
+        self._episode_lengths = [[] for _ in range(self._num_envs)]
 
     @property
     def episode_cum_rewards(self) -> list[list[float]]:
-        """Per-slot lists of raw cumulative rewards for completed episodes."""
+        """Per-env lists of raw cumulative rewards for completed episodes."""
         return self._episode_cum_rewards
 
     @property
     def episode_lengths(self) -> list[list[float]]:
-        """Per-slot lists of episode lengths (step counts) for completed episodes."""
+        """Per-env lists of episode lengths (step counts) for completed episodes."""
         return self._episode_lengths
 
 
-class _Slot:
+class _EnvInstance:
     """Internal: wraps a single ``gym.Env`` with the Mouse step protocol.
 
-    Each slot manages its own episode state — episode time, index, and cumulative
-    rewards — and implements the two-frame boundary sequence: a terminal step
-    (``done=1/2``) followed by a reset frame (``done=0``, ``time=0``) on the next
-    ``step()`` call, with the user's action on the reset-frame call silently ignored.
+    Each env instance manages its own episode state — episode time, index, and
+    cumulative rewards — and implements the two-frame boundary sequence: a
+    terminal step (``done=1/2``) followed by a reset frame (``done=0``,
+    ``time=0``) on the next ``step()`` call, with the user's action on the
+    reset-frame call silently ignored.
     """
 
     def __init__(
@@ -161,6 +162,8 @@ class _Slot:
         name: str,
         *,
         reset_reward: float = 0.0,
+        episode_reset_options: dict | None = None,
+        task_reset_options: dict | None = None,
         reward_scale: float = 1.0,
         reward_shift: float = 0.0,
         episodes_per_task: int,
@@ -168,6 +171,8 @@ class _Slot:
         self._env = env
         self._name = name
         self._reset_reward = float(reset_reward)
+        self._episode_reset_options = dict(episode_reset_options or {})
+        self._task_reset_options = dict(task_reset_options or {})
         self._reward_scale = float(reward_scale)
         self._reward_shift = float(reward_shift)
         self._episodes_per_task = int(episodes_per_task)
@@ -312,9 +317,17 @@ class _Slot:
         channel = cast(str, self._obs_channel)
         return {channel: torch.tensor(np.asarray(obs), dtype=self._obs_dtypes[channel])}
 
-    def _do_reset(self) -> tuple[dict, None]:
+    def _reset_options_for_boundary(self, *, task_start: bool) -> dict[str, Any]:
+        options = dict(self._episode_reset_options)
+        if task_start:
+            options.update(self._task_reset_options)
+        return options
+
+    def _do_reset(self, *, task_start: bool) -> tuple[dict, None]:
         """Call env.reset() and return the reset-frame output; no episode result."""
-        obs, info = self._env.reset()
+        reset_options = self._reset_options_for_boundary(task_start=task_start)
+        reset_kwargs = {"options": reset_options} if reset_options else {}
+        obs, info = self._env.reset(**reset_kwargs)
         self._episode_time = 0
         self._episode_cum_reward = 0.0
 
@@ -336,25 +349,27 @@ class _Slot:
         return output, None
 
     def step(self, input_dict: dict) -> tuple[dict, tuple[float, float] | None]:
-        """Step this slot; return ``(output, episode_result)`` for the single env.
+        """Step this env instance; return ``(output, episode_result)``.
 
         ``episode_result`` is ``(cum_reward, length)`` when the episode ended on this
         step, or ``None`` otherwise (including reset frames).
         """
         if self._needs_initial_reset:
             self._needs_initial_reset = False
-            return self._do_reset()
+            return self._do_reset(task_start=True)
 
         if self._autoreset_pending:
             self._autoreset_pending = False
             self._episode_index += 1
+            task_start = False
             if self._task_done_pending:
                 self._task_done_pending = False
                 self._task_index += 1
                 self._task_episode_count = 0
+                task_start = True
             else:
                 self._task_episode_count += 1
-            return self._do_reset()
+            return self._do_reset(task_start=task_start)
 
         # Regular step — validate and unpack input
         action_np = self._require_input(input_dict)
@@ -408,7 +423,7 @@ class _Slot:
         return output, episode_result
 
     def render(self) -> list:
-        """Return rendered frames from this slot."""
+        """Return rendered frames from this env instance."""
         frames = self._env.render()
         if frames is None:
             return []
@@ -421,22 +436,22 @@ class _Slot:
 
 
 class MouseEnv:
-    """A flat list of independent environment slots, each built from one :class:`EnvConfig`.
+    """A flat list of independent env instances, each built from one :class:`EnvConfig`.
 
     Use :func:`mouse_envs.make_env` with a single :class:`EnvConfig` or a
     ``list[EnvConfig]`` to construct. ``EnvConfig.num_envs=N`` creates N independent
-    slots — equivalent to specifying N separate single-env configs.
+    env instances — equivalent to specifying N separate single-env configs.
 
-    ``step`` and ``sample_random_inputs`` use a flat structure indexed by slot.
-    ``inputs[i]`` is the input dict for the i-th slot. ``step`` returns a flat
-    ``list[dict]`` of outputs — one per slot.
+    ``step`` and ``sample_random_inputs`` use a flat structure indexed by env.
+    ``inputs[i]`` is the input dict for the i-th env instance. ``step`` returns a
+    flat ``list[dict]`` of outputs — one per env instance.
 
     Episode statistics are accumulated automatically in :attr:`tracker`
     (:class:`MetricsTracker`). Call ``env.tracker.clear()`` to reset the accumulated
     data between evaluation runs.
 
     There is no public ``reset()`` — call ``step()`` only. The first ``step()`` after
-    construction performs an internal reset for each slot and returns initial
+    construction performs an internal reset for each env instance and returns initial
     observations with ``done == 0`` and ``time == 0``; inputs on that call are ignored.
     The step after any episode terminates or truncates is also a reset frame: the user's
     action is ignored and the first observation of the new episode is returned.
@@ -447,8 +462,8 @@ class MouseEnv:
         reward (float32 tensor)   — scaled/shifted per-step reward (raw × scale + shift)
         done (int64 tensor)       — 0=running, 1=episode terminated, 2=episode truncated,
                                     3=task terminated, 4=task truncated
-        episode_index (int)       — episode counter for this slot
-        task_index (int)          — task counter for this slot
+        episode_index (int)       — episode counter for this env instance
+        task_index (int)          — task counter for this env instance
         info_<key> (any)          — every key from the Gymnasium info dict is forwarded as
                                     ``info_<key>``. For example, ``info["env_q_star"]``
                                     from a Q* wrapper appears as ``info_env_q_star``,
@@ -457,14 +472,14 @@ class MouseEnv:
 
     Introspect the full output and input contracts via ``env.output_specs[i]`` and
     ``env.input_specs[i]``, which are :class:`OutputSpec` and :class:`InputSpec`
-    dataclasses (one per slot).
+    dataclasses (one per env instance).
     """
 
-    def __init__(self, slots: list[_Slot]) -> None:
-        if not slots:
-            raise ValueError("MouseEnv requires at least one slot.")
-        self._slots = slots
-        self._tracker = MetricsTracker(len(slots))
+    def __init__(self, env_instances: list[_EnvInstance]) -> None:
+        if not env_instances:
+            raise ValueError("MouseEnv requires at least one env instance.")
+        self._env_instances = env_instances
+        self._tracker = MetricsTracker(len(env_instances))
 
     @property
     def tracker(self) -> MetricsTracker:
@@ -476,46 +491,51 @@ class MouseEnv:
 
     @property
     def num_envs(self) -> int:
-        """Total number of independent slots."""
-        return len(self._slots)
+        """Total number of independent env instances."""
+        return len(self._env_instances)
 
     @property
     def names(self) -> tuple[str, ...]:
-        """All slot names."""
-        return tuple(s.name for s in self._slots)
+        """All env instance names."""
+        return tuple(env.name for env in self._env_instances)
 
     @property
     def output_specs(self) -> list[OutputSpec]:
-        """One :class:`OutputSpec` per slot."""
-        return [s.output_spec for s in self._slots]
+        """One :class:`OutputSpec` per env instance."""
+        return [env.output_spec for env in self._env_instances]
 
     @property
     def input_specs(self) -> list[InputSpec]:
-        """One :class:`InputSpec` per slot."""
-        return [s.input_spec for s in self._slots]
+        """One :class:`InputSpec` per env instance."""
+        return [env.input_spec for env in self._env_instances]
+
+    @property
+    def action_spaces(self) -> tuple[gym.Space, ...]:
+        """Underlying Gymnasium action spaces, one per env instance."""
+        return tuple(env._env.action_space for env in self._env_instances)
 
     def sample_random_inputs(self) -> list[dict]:
-        """Sample random inputs for every slot.
+        """Sample random inputs for every env instance.
 
-        Returns a flat ``list[dict]`` — one dict per slot. Pass the result directly
-        to ``step()``.
+        Returns a flat ``list[dict]`` — one dict per env instance. Pass the result
+        directly to ``step()``.
         """
-        return [s.sample_random_input() for s in self._slots]
+        return [env.sample_random_input() for env in self._env_instances]
 
     def step(self, inputs: list[dict]) -> list[dict]:
-        """Step all slots sequentially and return outputs.
+        """Step all env instances sequentially and return outputs.
 
-        ``inputs[i]`` is the input dict for slot ``i``. Returns a flat
-        ``list[dict]`` — one output dict per slot. On the first call and on any
-        call immediately after an episode ends, the corresponding slot's input is
+        ``inputs[i]`` is the input dict for env instance ``i``. Returns a flat
+        ``list[dict]`` — one output dict per env instance. On the first call and on
+        any call immediately after an episode ends, the corresponding input is
         ignored and a reset frame is returned instead.
 
         Completed-episode statistics are recorded automatically into
         :attr:`tracker`. Call ``env.tracker.clear()`` to reset between runs.
         """
         all_outputs: list[dict] = []
-        for i, (slot, inp) in enumerate(zip(self._slots, inputs)):
-            output, episode_result = slot.step(inp)
+        for i, (env, inp) in enumerate(zip(self._env_instances, inputs)):
+            output, episode_result = env.step(inp)
             all_outputs.append(output)
             if episode_result is not None:
                 cum_reward, length = episode_result
@@ -523,16 +543,16 @@ class MouseEnv:
         return all_outputs
 
     def render(self) -> list:
-        """Return rendered frames from all slots, flattened into one list.
+        """Return rendered frames from all env instances, flattened into one list.
 
         Requires ``render_mode="rgb_array"`` (pass via ``EnvConfig.kwargs``).
         """
         frames: list = []
-        for s in self._slots:
-            frames.extend(s.render())
+        for env in self._env_instances:
+            frames.extend(env.render())
         return frames
 
     def close(self) -> None:
-        """Close all slots."""
-        for s in self._slots:
-            s.close()
+        """Close all env instances."""
+        for env in self._env_instances:
+            env.close()

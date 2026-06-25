@@ -16,13 +16,20 @@ class EnvConfig:
     Attributes:
         id: Gymnasium env ID (e.g. ``"CartPole-v1"``). Used as the base name when
             ``name`` is not set.
-        seed: RNG seed applied to the env on construction.
-        num_envs: Number of parallel env instances (slots).
+        seed: Base RNG seed used to derive per-env reset streams when
+            ``reset_seed`` is not set.
+        num_envs: Number of parallel env instances.
+        reset_seed: Optional base seed for mouse-env's internal Gymnasium
+            reset stream. Each env instance uses ``reset_seed + env_index``.
         episodes_per_task: Number of episodes before the task terminates. Defaults to
             ``0`` (unlimited) — the task boundary (done codes 3/4) never fires
             automatically.
-        name: Optional display name; overrides ``id`` for slot naming.
+        name: Optional display name; overrides ``id`` for env instance naming.
         kwargs: Extra keyword arguments forwarded to ``gymnasium.make``.
+        episode_reset_options: Extra options forwarded to every internal
+            ``env.reset(options=...)``.
+        task_reset_options: Extra options overlaid on top of ``episode_reset_options``
+            when an internal reset starts a new task.
         render: Enable render mode (``"human"``).
         q_star_source: Optional dict that attaches expert Q-values to every step
             output as ``outputs[i]["info_env_q_star"]``. Must contain a
@@ -53,7 +60,8 @@ class EnvConfig:
             - ``"deterministic"`` *(bool, default* ``True``*)* — deterministic action selection
 
         env_fn: Zero-arg factory that returns a freshly built Gymnasium env. When
-            set, ``id`` is used only for naming; the factory is called once per slot.
+            set, ``id`` is used only for naming; the factory is called once per
+            env instance.
         observation_kind: Force the observation channel (``"continuous"``,
             ``"discrete"``, or ``"image"``). Defaults to auto-detection; required
             for image envs.
@@ -66,9 +74,12 @@ class EnvConfig:
     id: str
     seed: int
     num_envs: int
+    reset_seed: int | None = None
     episodes_per_task: int = 0
     name: str | None = None
     kwargs: dict | None = None
+    episode_reset_options: dict | None = None
+    task_reset_options: dict | None = None
     render: bool = False
     q_star_source: dict[str, Any] | None = None
     env_fn: Callable[[], Any] | None = None
