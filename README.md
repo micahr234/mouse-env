@@ -67,7 +67,7 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; preprocessed frame passthrough |
 | [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
 | [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
-| [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `env_q_star`; tabular experiments |
+| [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `q_star`; tabular experiments |
 | [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env instance names |
 | [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
 | [10 — RNG seeding control](examples/10_rng_seeding_control.ipynb) | `map_seed`; `reset_seed`; reproducible generated maps and resets |
@@ -147,7 +147,7 @@ mouse-env also includes a few knobs for augmenting and modifying environments.
 
 ### Expert Q-values (`q_star_source`)
 
-Set `q_star_source` on `EnvConfig` to attach expert Q-values to every step output as `outputs[i]["info_env_q_star"]`. Useful for imitation learning, diagnostics, or guided exploration.
+Set `q_star_source` on `EnvConfig` to attach expert Q-values to every step output as `outputs[i]["info_q_star"]`. Useful for imitation learning, diagnostics, or guided exploration.
 
 `q_star_source` is a plain `dict` with a required `"provider"` key plus provider-specific fields:
 

@@ -121,7 +121,7 @@ def test_output_spec_frozenlake_obs() -> None:
         assert isinstance(ospec.observation, FieldSpec)
         assert ospec.observation.dtype == torch.int64
         assert ospec.observation.shape == ()
-        # Q-values appear as info_env_q_star in step outputs, not in OutputSpec.
+        # Q-values appear as info_q_star in step outputs, not in OutputSpec.
         assert not hasattr(ospec, "q_star")
     finally:
         env.close()
@@ -255,9 +255,10 @@ def test_procedural_frozenlake_vector() -> None:
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
-        assert "info_env_q_star" in outputs[0]
-        assert outputs[0]["info_env_q_star"].shape == (4,)
-        assert outputs[1]["info_env_q_star"].shape == (4,)
+        assert "info_q_star" in outputs[0]
+        assert "info_env_q_star" not in outputs[0]
+        assert outputs[0]["info_q_star"].shape == (4,)
+        assert outputs[1]["info_q_star"].shape == (4,)
         for r in outputs:
             assert "observation" in r
     finally:
@@ -278,7 +279,8 @@ def test_synthetic_vector() -> None:
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
-        assert "info_env_q_star" in outputs[0]
+        assert "info_q_star" in outputs[0]
+        assert "info_env_q_star" not in outputs[0]
         for r in outputs:
             assert "observation" in r
     finally:

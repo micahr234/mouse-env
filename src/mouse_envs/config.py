@@ -26,7 +26,7 @@ class EnvConfig:
             when an internal reset starts a new task.
         render: Enable render mode (``"human"``).
         q_star_source: Optional dict that attaches expert Q-values to every step
-            output as ``outputs[i]["info_env_q_star"]``. Must contain a
+            output as ``outputs[i]["info_q_star"]``. Must contain a
             ``"provider"`` key. Three providers are supported:
 
             ``"env_q_star"`` — env-computed Q* (no extra fields):

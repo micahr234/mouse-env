@@ -2,7 +2,7 @@
 
 Provides:
 - ExpertPolicyAdapter: dataclass that wraps a loaded policy and exposes a uniform interface
-  for deriving ``env_q_star`` from env info, observation queries, or action hints.
+  for deriving ``q_star`` from env info, observation queries, or action hints.
 - build_q_star_source_adapter: factory that reads a ``q_star_source`` config dict and
   returns the appropriate adapter (SB3 policy, tabular Q-table, or env-info passthrough).
 - action_star_to_one_hot_q_star: convert integer expert actions to one-hot Q-value rows.
@@ -61,7 +61,7 @@ def action_star_to_one_hot_q_star(actions: np.ndarray, num_actions: int) -> np.n
     """Convert integer expert actions to one-hot Q-value rows.
 
     Produces a ``[num_envs, num_actions]`` float64 array with 1.0 at the expert
-    action index and 0.0 elsewhere, suitable for use as ``env_q_star`` when
+    action index and 0.0 elsewhere, suitable for use as ``q_star`` when
     the environment only exposes a scalar expert action rather than full Q-values.
     """
     actions = np.asarray(actions, dtype=np.int64).reshape(-1)
@@ -76,7 +76,7 @@ def action_star_to_continuous_q_star(
     """Surface continuous expert action vectors in the ``q_star`` field.
 
     Box action spaces have no Q-value-over-actions, so the expert's target action
-    vector itself is exposed as ``env_q_star``. Produces a
+    vector itself is exposed as ``q_star``. Produces a
     ``[num_envs, action_dim]`` float64 array.
     """
     arr = np.asarray(actions, dtype=np.float64).reshape(num_envs, -1)
@@ -93,7 +93,7 @@ class ExpertPolicyAdapter:
     """Adapter that extracts expert Q-values or optimal actions from various sources.
 
     Used internally by :class:`~mouse_envs.wrappers.QStarWrapper` to populate
-    ``info["env_q_star"]`` on each step. Instantiated by
+    ``info["q_star"]`` on each step. Instantiated by
     :func:`build_q_star_source_adapter`; do not construct directly.
 
     Attributes:

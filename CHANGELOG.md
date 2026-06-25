@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - `EnvConfig.reset_seed` is now the sole config field for mouse-env's internal Gymnasium reset seeding.
 - Observations and actions now preserve the underlying Gymnasium space dtype where possible instead of being routed through semantic observation kinds or canonical float/int dtypes.
+- `QStarWrapper` now publishes normalized expert values as `info["q_star"]`, so `MouseEnv` emits `outputs[i]["info_q_star"]` instead of `outputs[i]["info_env_q_star"]`.
 
 ### Removed
 - `EnvConfig.observation_kind`; observations are always emitted as `outputs[i]["observation"]`.
