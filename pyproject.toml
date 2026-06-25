@@ -35,6 +35,7 @@ examples = [
 ]
 atari = [
     "gymnasium[atari]>=1.3.0",
+    "ale-py>=0.12.0",
 ]
 non-stationary = [
     "ns-gym>=1.0.12",
