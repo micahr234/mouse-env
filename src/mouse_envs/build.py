@@ -9,7 +9,7 @@ import gymnasium as gym
 from mouse_envs.config import EnvConfig
 from mouse_envs.experts.action_star import apply_q_star_source_env_kwargs
 from mouse_envs.env_ids import PROCEDURAL_FROZENLAKE_ENV_ID, SYNTHETIC_ENV_ID
-from mouse_envs.format import MouseEnv, _EnvInstance
+from mouse_envs.format import GroupEnv, SingleEnv, _EnvInstance
 from mouse_envs.wrappers import (
     ObservationSliceWrapper,
     SeedStreamWrapper,
@@ -25,37 +25,44 @@ def _require_env_id(env_id: str) -> None:
         )
 
 
-def make_env(configs: EnvConfig | list[EnvConfig]) -> MouseEnv:
-    """Create a :class:`MouseEnv` from one or more :class:`EnvConfig` objects.
+def make_env(config: EnvConfig) -> SingleEnv:
+    """Create a standalone :class:`SingleEnv` from one :class:`EnvConfig`.
 
-    Pass a single :class:`EnvConfig` for the common single-env case, or a list to
-    combine multiple environments into one :class:`MouseEnv`. Each config creates
-    one independent env instance. All env instances are stepped sequentially;
-    outputs form a flat list indexed by env.
+    For multiple environments use :func:`make_group_env`.
 
-    Usage — single env::
+    Usage::
 
         env = make_env(EnvConfig(id="CartPole-v1", reset_seed=0, episodes_per_task=5))
         for _ in range(1000):
-            inputs = env.sample_random_inputs()
-            outputs = env.step(inputs)
+            output = env.step(env.sample_random_input())
+    """
+    return SingleEnv(_make_env_instance(config))
 
-    Usage — multiple envs::
 
-        env = make_env([
-            EnvConfig(id="CartPole-v1", reset_seed=0, name="cartpole-0", episodes_per_task=5),
-            EnvConfig(id="CartPole-v1", reset_seed=1, name="cartpole-1", episodes_per_task=5),
-            EnvConfig(id="MountainCar-v0", reset_seed=2, name="mountaincar-0", episodes_per_task=5),
+def make_group_env(configs: list[EnvConfig]) -> GroupEnv:
+    """Create a :class:`GroupEnv` from a list of :class:`EnvConfig` objects.
+
+    Each config creates one independent :class:`SingleEnv`. You can also construct
+    :class:`GroupEnv` directly from existing :class:`SingleEnv` instances::
+
+        env_a = make_env(EnvConfig(id="CartPole-v1", reset_seed=0))
+        env_b = make_env(EnvConfig(id="CartPole-v1", reset_seed=1))
+        big = GroupEnv([env_a, env_b])
+        sub = GroupEnv([env_a])   # overlapping groups are fine
+
+    Usage::
+
+        env = make_group_env([
+            EnvConfig(id="CartPole-v1", reset_seed=0, name="cp-0", episodes_per_task=5),
+            EnvConfig(id="CartPole-v1", reset_seed=1, name="cp-1", episodes_per_task=5),
+            EnvConfig(id="MountainCar-v0", reset_seed=2, name="mc-0", episodes_per_task=5),
         ])
         for _ in range(1000):
-            outputs = env.step(env.sample_random_inputs())
+            outputs = env.step(env.sample_random_input())
             cartpole_outs = outputs[:2]
             mountaincar_outs = outputs[2:3]
     """
-    if isinstance(configs, EnvConfig):
-        configs = [configs]
-    env_instances = [_make_env_instance(cfg) for cfg in configs]
-    return MouseEnv(env_instances)
+    return GroupEnv([SingleEnv(_make_env_instance(cfg)) for cfg in configs])
 
 
 def _make_env_instance(config: EnvConfig) -> _EnvInstance:

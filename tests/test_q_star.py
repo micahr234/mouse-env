@@ -9,7 +9,7 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from mouse_envs import EnvConfig, make_env
+from mouse_envs import EnvConfig, make_env, make_group_env
 from mouse_envs.experts.action_star import (
     action_star_to_continuous_q_star,
     action_star_to_one_hot_q_star,
@@ -19,10 +19,19 @@ from mouse_envs.experts.action_star import (
 
 
 def _rollout(env, steps: int = 3) -> list:
-    outputs = env.step(env.sample_random_inputs())
+    """Roll out a GroupEnv for ``steps`` steps; returns the final list[dict]."""
+    outputs = env.step(env.sample_random_input())
     for _ in range(steps - 1):
-        outputs = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_input())
     return outputs
+
+
+def _rollout_single(env, steps: int = 3) -> dict:
+    """Roll out a SingleEnv for ``steps`` steps; returns the final output dict."""
+    output = env.step(env.sample_random_input())
+    for _ in range(steps - 1):
+        output = env.step(env.sample_random_input())
+    return output
 
 
 def test_normalize_q_star_source_canonical_providers() -> None:
@@ -76,7 +85,7 @@ def test_sb3_continuous_expert_injects_action_vector_q_star(
         raise AssertionError("hf_hub_download must not be called when path is set")
 
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
-        env = make_env(cfgs)
+        env = make_group_env(cfgs)
     try:
         assert env.input_specs[0].action.shape == (1,)
         result = _rollout(env, steps=2)
@@ -99,9 +108,9 @@ def test_env_q_star_procedural_frozenlake_is_exact() -> None:
     )
     env = make_env(cfg)
     try:
-        result = _rollout(env, steps=2)
-        q_star = result[0]["info_q_star"]
-        assert "info_env_q_star" not in result[0]
+        result = _rollout_single(env, steps=2)
+        q_star = result["info_q_star"]
+        assert "info_env_q_star" not in result
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         # Optimal Q* should have a unique argmax per state.
@@ -121,7 +130,7 @@ def test_env_q_star_synthetic_matches_action_dim() -> None:
         )
         for i in range(2)
     ]
-    env = make_env(cfgs)
+    env = make_group_env(cfgs)
     try:
         result = _rollout(env, steps=2)
         assert result[0]["info_q_star"].shape == (3,)
@@ -152,9 +161,9 @@ def test_sb3_local_path_injects_q_star_without_hf(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_env(cfg)
     try:
-        result = _rollout(env, steps=2)
-        q_star = result[0]["info_q_star"]
-        assert "info_env_q_star" not in result[0]
+        result = _rollout_single(env, steps=2)
+        q_star = result["info_q_star"]
+        assert "info_env_q_star" not in result
         assert q_star.shape == (2,)
         # PPO has no predict_q — wrapper falls back to one-hot expert actions.
         assert np.isclose(q_star.sum(), 1.0)
@@ -206,9 +215,9 @@ def test_hf_q_table_vector_env_integration(
     with patch("mouse_envs.experts.action_star.hf_hub_download", side_effect=_fail_hf_download):
         env = make_env(cfg)
     try:
-        result = _rollout(env, steps=2)
-        q_star = result[0]["info_q_star"]
-        assert "info_env_q_star" not in result[0]
+        result = _rollout_single(env, steps=2)
+        q_star = result["info_q_star"]
+        assert "info_env_q_star" not in result
         assert q_star.shape == (4,)
         assert np.all(np.isfinite(q_star))
         assert not np.isclose(q_star.sum(), 1.0)
@@ -224,9 +233,9 @@ def test_q_star_absent_when_disabled() -> None:
     )
     env = make_env(cfg)
     try:
-        result = _rollout(env, steps=2)
-        assert "info_q_star" not in result[0]
-        assert "info_env_q_star" not in result[0]
+        result = _rollout_single(env, steps=2)
+        assert "info_q_star" not in result
+        assert "info_env_q_star" not in result
     finally:
         env.close()
 

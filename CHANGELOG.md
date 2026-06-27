@@ -6,16 +6,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `SingleEnv`: standalone env class wrapping one gym env with its own `Tracker`. Constructed via `make_env(EnvConfig(...))`.
+- `GroupEnv`: pure-reference container that delegates `step`, `close`, `render`, and tracker reads to a list of `SingleEnv` instances. Constructed via `make_group_env([cfg1, cfg2, ...])` or directly as `GroupEnv([env_a, env_b])`. Multiple `GroupEnv` objects may point to overlapping sets of `SingleEnv` instances without data conflicts.
+- `make_group_env(list[EnvConfig])`: explicit factory for `GroupEnv`.
+- `GroupTracker`: live read-through view over each constituent `SingleEnv`'s `Tracker`. Stores no episode data; `episode_cum_rewards[i]` and `episode_lengths[i]` delegate directly to `envs[i].tracker`.
+- `SingleEnv`, `GroupEnv`, `Tracker`, and `GroupTracker` exported from `mouse_envs`.
+- Added a tracker example notebook (`12_metrics_tracker.ipynb`) covering raw vs shaped returns, `clear()` between eval runs, and multi-env aggregation.
 - Added a playable Procedural FrozenLake notebook with D-pad controls and rendered output.
 - `mouse_envs.__version__` now exposes the installed `mouse-env` package version from package metadata.
 
 ### Changed
+- `make_env(EnvConfig)` returns a `SingleEnv` (was `MouseEnv`). Passing a list to `make_env` is no longer supported — use `make_group_env`.
+- `SingleEnv.step(input: dict) -> dict` and `GroupEnv.step(inputs: list[dict]) -> list[dict]`.
+- Both env types expose `sample_random_input()` — returns `dict` on `SingleEnv`, `list[dict]` on `GroupEnv` (GroupEnv no longer has `sample_random_inputs()`).
+- `SingleEnv.tracker` is a flat `Tracker` with `episode_cum_rewards: list[float]` and `episode_lengths: list[float]`.
+- `GroupEnv.tracker` is a `GroupTracker` with per-env `list[list[float]]` views.
+- `SingleEnv.name`, `SingleEnv.output_spec`, `SingleEnv.input_spec` replace indexed `names`, `output_specs[0]`, `input_specs[0]` from old single-env `MouseEnv` usage.
+- `SingleEnv.action_space` and `SingleEnv.observation_space` expose the underlying gym space directly (not `gym.spaces.Tuple`).
 - `EnvConfig.reset_seed` is now the sole config field for mouse-env's internal Gymnasium reset seeding.
 - Observations and actions now preserve the underlying Gymnasium space dtype where possible instead of being routed through semantic observation kinds or canonical float/int dtypes.
-- `QStarWrapper` now publishes normalized expert values as `info["q_star"]`, so `MouseEnv` emits `outputs[i]["info_q_star"]` instead of `outputs[i]["info_env_q_star"]`.
+- `QStarWrapper` now publishes normalized expert values as `info["q_star"]`, so step outputs emit `info_q_star` instead of `info_env_q_star`.
 
 ### Removed
-- `EnvConfig.observation_kind`; observations are always emitted as `outputs[i]["observation"]`.
+- `MouseEnv` removed; replaced by `SingleEnv` (one env) and `GroupEnv` (multiple envs).
+- `MetricsTracker` renamed to `Tracker`.
+- `EnvConfig.observation_kind`; observations are always emitted under `observation`.
 - `EnvConfig.seed`; use `EnvConfig.reset_seed` for reset-time seeding and `kwargs={"map_seed": ...}` for first-party procedural map/MDP generation.
 
 ## [0.5.0] - 2026-06-25

@@ -7,14 +7,23 @@ import numpy as np
 import pytest
 import torch
 
-from mouse_envs import EnvConfig, FieldSpec, InputSpec, OutputSpec, make_env
+from mouse_envs import EnvConfig, FieldSpec, InputSpec, OutputSpec, make_env, make_group_env
 
 
 def _rollout(env, steps: int = 5) -> list:
-    outputs = env.step(env.sample_random_inputs())
+    """Roll out a GroupEnv for ``steps`` steps; returns the final list[dict]."""
+    outputs = env.step(env.sample_random_input())
     for _ in range(steps - 1):
-        outputs = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_input())
     return outputs
+
+
+def _rollout_single(env, steps: int = 5) -> dict:
+    """Roll out a SingleEnv for ``steps`` steps; returns the final output dict."""
+    output = env.step(env.sample_random_input())
+    for _ in range(steps - 1):
+        output = env.step(env.sample_random_input())
+    return output
 
 
 def test_cartpole_step_contract() -> None:
@@ -27,13 +36,13 @@ def test_cartpole_step_contract() -> None:
         )
         for i in range(3)
     ]
-    env = make_env(cfgs)
+    env = make_group_env(cfgs)
     try:
         outputs = _rollout(env)
         assert len(outputs) == 3
         assert env.names[0] == "train-cartpole_0"
         assert env.names == ("train-cartpole_0", "train-cartpole_1", "train-cartpole_2")
-        sampled = env.sample_random_inputs()
+        sampled = env.sample_random_input()
         assert "action" in sampled[0]
         assert sampled[0]["action"].ndim == 0
         for r in outputs:
@@ -54,15 +63,14 @@ def test_cartpole_step_contract() -> None:
         env.close()
 
 
-def test_mouse_env_exposes_gym_tuple_spaces() -> None:
-    env = make_env(
+def test_group_env_exposes_gym_tuple_spaces() -> None:
+    env = make_group_env(
         [
             EnvConfig(id="CartPole-v1", reset_seed=0, episodes_per_task=5),
             EnvConfig(id="CartPole-v1", reset_seed=1, episodes_per_task=5),
         ]
     )
     try:
-        assert isinstance(env, gym.Env)
         assert isinstance(env.action_space, gym.spaces.Tuple)
         assert isinstance(env.observation_space, gym.spaces.Tuple)
         assert len(env.action_space.spaces) == 2
@@ -82,8 +90,8 @@ def test_output_spec_and_input_spec_cartpole() -> None:
     )
     env = make_env(cfg)
     try:
-        ospec = env.output_specs[0]
-        ispec = env.input_specs[0]
+        ospec = env.output_spec
+        ispec = env.input_spec
 
         assert isinstance(ospec, OutputSpec)
         assert isinstance(ispec, InputSpec)
@@ -117,7 +125,7 @@ def test_output_spec_frozenlake_obs() -> None:
     )
     env = make_env(cfg)
     try:
-        ospec = env.output_specs[0]
+        ospec = env.output_spec
         assert isinstance(ospec.observation, FieldSpec)
         assert ospec.observation.dtype == torch.int64
         assert ospec.observation.shape == ()
@@ -128,7 +136,7 @@ def test_output_spec_frozenlake_obs() -> None:
 
 
 def test_pendulum_continuous_step_contract() -> None:
-    env = make_env(
+    env = make_group_env(
         [
             EnvConfig(id="Pendulum-v1", reset_seed=0, episodes_per_task=5),
             EnvConfig(id="Pendulum-v1", reset_seed=1, episodes_per_task=5),
@@ -136,7 +144,7 @@ def test_pendulum_continuous_step_contract() -> None:
     )
     try:
         assert env.input_specs[0].action.shape == (1,)
-        sampled = env.sample_random_inputs()
+        sampled = env.sample_random_input()
         action = sampled[0]
         assert "action" in action
         assert action["action"].dtype == torch.float32
@@ -162,22 +170,16 @@ def test_action_input_contract_is_enforced() -> None:
     )
     env = make_env(cfg)
     try:
-        env.step(env.sample_random_inputs())
-        not_a_dict = [torch.tensor(0)]
+        env.step(env.sample_random_input())
         with pytest.raises(ValueError, match="must be a dict"):
-            env.step(not_a_dict)
-        missing_key = [{"wrong": torch.tensor(0)}]
+            env.step([torch.tensor(0)])
         with pytest.raises(ValueError, match="action"):
-            env.step(missing_key)
-        with pytest.raises(ValueError, match="exactly 1 entries"):
-            env.step([])
-        with pytest.raises(ValueError, match="one dict per env instance"):
-            env.step({"action": torch.tensor(0)})
+            env.step({"wrong": torch.tensor(0)})
     finally:
         env.close()
 
 
-def test_mouse_env_reset_is_not_implemented() -> None:
+def test_single_env_reset_is_not_implemented() -> None:
     cfg = EnvConfig(
         id="CartPole-v1",
         reset_seed=0,
@@ -223,17 +225,17 @@ def test_dict_obs_dtype_follows_space_not_key_name() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs = _rollout(env, steps=2)
-        assert "pos" not in outputs[0]
-        assert "tile" not in outputs[0]
-        obs = outputs[0]["observation"]
+        output = _rollout_single(env, steps=2)
+        assert "pos" not in output
+        assert "tile" not in output
+        obs = output["observation"]
         assert isinstance(obs, dict)
         # Output tensors preserve each subspace dtype.
         assert obs["pos"].dtype == torch.float32
         assert obs["tile"].dtype == torch.int32
 
-        # output_specs[0].observation describes the nested observation dict.
-        ospec = env.output_specs[0]
+        # output_spec.observation describes the nested observation dict.
+        ospec = env.output_spec
         assert isinstance(ospec.observation, dict)
         assert ospec.observation["pos"].dtype == torch.float32
         assert ospec.observation["tile"].dtype == torch.int32
@@ -251,7 +253,7 @@ def test_procedural_frozenlake_vector() -> None:
         )
         for i in range(2)
     ]
-    env = make_env(cfgs)
+    env = make_group_env(cfgs)
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
@@ -275,7 +277,7 @@ def test_synthetic_vector() -> None:
         )
         for i in range(2)
     ]
-    env = make_env(cfgs)
+    env = make_group_env(cfgs)
     try:
         outputs = _rollout(env)
         assert len(outputs) == 2
@@ -301,10 +303,10 @@ def test_procedural_frozenlake_can_regenerate_map_from_episode_reset_options() -
     )
     env = make_env(cfg)
     try:
-        first = env.step(env.sample_random_inputs())[0]
-        terminal = env.step(env.sample_random_inputs())[0]
+        first = env.step(env.sample_random_input())
+        terminal = env.step(env.sample_random_input())
         assert terminal["done"].item() != 0
-        reset = env.step(env.sample_random_inputs())[0]
+        reset = env.step(env.sample_random_input())
 
         assert "info_map" in first
         assert "info_map" in reset
@@ -327,10 +329,10 @@ def test_synthetic_can_regenerate_map_from_episode_reset_options() -> None:
     )
     env = make_env(cfg)
     try:
-        first = env.step(env.sample_random_inputs())[0]
-        terminal = env.step(env.sample_random_inputs())[0]
+        first = env.step(env.sample_random_input())
+        terminal = env.step(env.sample_random_input())
         assert terminal["done"].item() != 0
-        reset = env.step(env.sample_random_inputs())[0]
+        reset = env.step(env.sample_random_input())
 
         assert "info_map" in first
         assert "info_map" in reset
@@ -380,7 +382,7 @@ def test_make_env_stream_seeds_are_independent() -> None:
         )
         env = make_env(cfg)
         try:
-            return env.step(env.sample_random_inputs())[0]["info_map"]
+            return env.step(env.sample_random_input())["info_map"]
         finally:
             env.close()
 
@@ -397,9 +399,8 @@ def test_action_space_can_be_seeded_for_random_inputs() -> None:
         )
         env = make_env(cfg)
         try:
-            assert len(env.action_space.spaces) == 1
-            env.action_space.spaces[0].seed(action_space_seed)
-            return [int(env.sample_random_inputs()[0]["action"].item()) for _ in range(12)]
+            env.action_space.seed(action_space_seed)
+            return [int(env.sample_random_input()["action"].item()) for _ in range(12)]
         finally:
             env.close()
 
@@ -427,11 +428,11 @@ def test_procedural_frozenlake_can_regenerate_map_at_task_boundary_only() -> Non
     )
     env = make_env(cfg)
     try:
-        initial = env.step(env.sample_random_inputs())[0]
-        first_terminal = env.step(env.sample_random_inputs())[0]
-        episode_reset = env.step(env.sample_random_inputs())[0]
-        second_terminal = env.step(env.sample_random_inputs())[0]
-        task_reset = env.step(env.sample_random_inputs())[0]
+        initial = env.step(env.sample_random_input())
+        first_terminal = env.step(env.sample_random_input())
+        episode_reset = env.step(env.sample_random_input())
+        second_terminal = env.step(env.sample_random_input())
+        task_reset = env.step(env.sample_random_input())
 
         assert first_terminal["done"].item() == DONE_EPISODE_TRUNCATED
         assert second_terminal["done"].item() == DONE_TASK_TRUNCATED
@@ -460,15 +461,15 @@ def test_procedural_frozenlake_observation_space_uses_max_map_size() -> None:
     )
     env = make_env(cfg)
     try:
-        space = env.observation_space.spaces[0]
+        space = env.observation_space
         assert isinstance(space, gym.spaces.Discrete)
         assert space.n == 30
 
-        env.step(env.sample_random_inputs())
-        env.step(env.sample_random_inputs())
-        env.step(env.sample_random_inputs())
+        env.step(env.sample_random_input())
+        env.step(env.sample_random_input())
+        env.step(env.sample_random_input())
 
-        space = env.observation_space.spaces[0]
+        space = env.observation_space
         assert isinstance(space, gym.spaces.Discrete)
         assert space.n == 30
     finally:
@@ -491,9 +492,9 @@ def _task_regenerated_frozenlake_maps(seed: int) -> list[str]:
     maps: list[str] = []
     try:
         for _ in range(3):
-            reset_frame = env.step([{"action": torch.tensor(0)}])[0]
+            reset_frame = env.step({"action": torch.tensor(0)})
             maps.append(reset_frame["info_map"])
-            terminal = env.step([{"action": torch.tensor(0)}])[0]
+            terminal = env.step({"action": torch.tensor(0)})
             assert terminal["done"].item() != 0
         return maps
     finally:
@@ -514,10 +515,10 @@ def test_partial_observability() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs = _rollout(env, steps=2)
-        obs = outputs[0]["observation"]
+        output = _rollout_single(env, steps=2)
+        obs = output["observation"]
         assert obs.shape == (2,)
-        assert env.output_specs[0].observation.shape == (2,)
+        assert env.output_spec.observation.shape == (2,)
     finally:
         env.close()
 
@@ -531,24 +532,24 @@ def test_reset_frame_contract() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs = env.step(env.sample_random_inputs())
-        assert outputs[0]["time"].item() == 0
-        assert "action" not in outputs[0]
-        assert outputs[0]["reward"].item() == -1.0
-        assert outputs[0]["done"].item() == 0
-        assert outputs[0]["task_index"] == 0
-        assert env.tracker.episode_cum_rewards[0] == []
+        output = env.step(env.sample_random_input())
+        assert output["time"].item() == 0
+        assert "action" not in output
+        assert output["reward"].item() == -1.0
+        assert output["done"].item() == 0
+        assert output["task_index"] == 0
+        assert env.tracker.episode_cum_rewards == []
     finally:
         env.close()
 
 
-def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[list, int]:
-    outputs = env.step(env.sample_random_inputs())
+def _roll_until_autoreset(env, *, max_steps: int = 500) -> tuple[dict, int]:
+    output = env.step(env.sample_random_input())
     for step in range(1, max_steps):
-        prev_time = outputs[0]["time"].item()
-        outputs = env.step(env.sample_random_inputs())
-        if outputs[0]["time"].item() == 0 and prev_time > 0:
-            return outputs, step
+        prev_time = output["time"].item()
+        output = env.step(env.sample_random_input())
+        if output["time"].item() == 0 and prev_time > 0:
+            return output, step
     raise AssertionError(f"no autoreset frame within {max_steps} steps")
 
 
@@ -562,11 +563,11 @@ def test_autoreset_frame_zeros_reward_with_shift() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs, _step = _roll_until_autoreset(env)
-        assert outputs[0]["time"].item() == 0
-        assert outputs[0]["reward"].item() == 0.0
-        assert outputs[0]["done"].item() == 0
-        assert len(env.tracker.episode_cum_rewards[0]) >= 1
+        output, _step = _roll_until_autoreset(env)
+        assert output["time"].item() == 0
+        assert output["reward"].item() == 0.0
+        assert output["done"].item() == 0
+        assert len(env.tracker.episode_cum_rewards) >= 1
     finally:
         env.close()
 
@@ -588,7 +589,7 @@ def test_env_fn_factory() -> None:
         )
         for i in range(2)
     ]
-    env = make_env(cfgs)
+    env = make_group_env(cfgs)
     try:
         outputs = _rollout(env, steps=2)
         assert len(outputs) == 2
@@ -619,11 +620,11 @@ def test_box_observation_preserves_native_uint8_dtype() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs = _rollout(env, steps=2)
-        assert "observation" in outputs[0]
-        assert outputs[0]["observation"].dtype == torch.uint8
-        assert env.output_specs[0].observation.dtype == torch.uint8
-        assert env.output_specs[0].observation.shape == (2, 3)
+        output = _rollout_single(env, steps=2)
+        assert "observation" in output
+        assert output["observation"].dtype == torch.uint8
+        assert env.output_spec.observation.dtype == torch.uint8
+        assert env.output_spec.observation.shape == (2, 3)
     finally:
         env.close()
 
@@ -652,14 +653,14 @@ def test_box_action_preserves_native_float64_dtype() -> None:
     )
     env = make_env(cfg)
     try:
-        inputs = env.sample_random_inputs()
-        assert inputs[0]["action"].dtype == torch.float64
-        assert env.input_specs[0].action.dtype == torch.float64
+        input = env.sample_random_input()
+        assert input["action"].dtype == torch.float64
+        assert env.input_spec.action.dtype == torch.float64
 
-        env.step(inputs)  # initial reset frame ignores the action
-        inputs = [{"action": torch.tensor([0.25, -0.25], dtype=torch.float64)}]
-        env.step(inputs)
-        inner_env = env._env_instances[0]._env.env
+        env.step(input)  # initial reset frame ignores the action
+        input = {"action": torch.tensor([0.25, -0.25], dtype=torch.float64)}
+        env.step(input)
+        inner_env = env._env_instance._env.env
         assert inner_env.last_action is not None
         assert inner_env.last_action.dtype == np.float64
     finally:
@@ -680,8 +681,8 @@ def test_task_done_codes_fire_at_task_boundary() -> None:
         episode_dones: list[int] = []
         task_dones: list[int] = []
         for _ in range(300):
-            outputs = env.step(env.sample_random_inputs())
-            done = int(outputs[0]["done"].item())
+            output = env.step(env.sample_random_input())
+            done = int(output["done"].item())
             if done in (DONE_EPISODE_TERMINATED, DONE_EPISODE_TRUNCATED):
                 episode_dones.append(done)
             elif done in (DONE_TASK_TERMINATED, DONE_TASK_TRUNCATED):
@@ -690,14 +691,14 @@ def test_task_done_codes_fire_at_task_boundary() -> None:
         assert len(task_dones) > 0, "expected some task-done steps within 300 steps"
         assert len(episode_dones) > 0, "expected some episode-done steps within 300 steps"
         # task_index increments each time a task boundary is crossed
-        outputs = env.step(env.sample_random_inputs())
-        assert outputs[0]["task_index"] >= 0
+        output = env.step(env.sample_random_input())
+        assert output["task_index"] >= 0
     finally:
         env.close()
 
 
 def test_tracker_accumulates_and_clears() -> None:
-    from mouse_envs import MetricsTracker
+    from mouse_envs import Tracker
 
     cfg = EnvConfig(
         id="CartPole-v1",
@@ -707,20 +708,20 @@ def test_tracker_accumulates_and_clears() -> None:
     )
     env = make_env(cfg)
     try:
-        assert isinstance(env.tracker, MetricsTracker)
-        assert env.tracker.episode_cum_rewards == [[]]
-        assert env.tracker.episode_lengths == [[]]
+        assert isinstance(env.tracker, Tracker)
+        assert env.tracker.episode_cum_rewards == []
+        assert env.tracker.episode_lengths == []
 
         # Roll until at least one episode completes
         for _ in range(200):
-            env.step(env.sample_random_inputs())
-            if env.tracker.episode_cum_rewards[0]:
+            env.step(env.sample_random_input())
+            if env.tracker.episode_cum_rewards:
                 break
         else:
             raise AssertionError("no episode completed within 200 steps")
 
-        rewards = env.tracker.episode_cum_rewards[0]
-        lengths = env.tracker.episode_lengths[0]
+        rewards = env.tracker.episode_cum_rewards
+        lengths = env.tracker.episode_lengths
         assert len(rewards) >= 1
         assert len(lengths) == len(rewards)
         assert all(isinstance(r, float) for r in rewards)
@@ -728,7 +729,7 @@ def test_tracker_accumulates_and_clears() -> None:
 
         # clear() wipes accumulated data
         env.tracker.clear()
-        assert env.tracker.episode_cum_rewards == [[]]
-        assert env.tracker.episode_lengths == [[]]
+        assert env.tracker.episode_cum_rewards == []
+        assert env.tracker.episode_lengths == []
     finally:
         env.close()

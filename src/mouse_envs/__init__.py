@@ -2,15 +2,17 @@
 
 from importlib.metadata import version
 
-from mouse_envs.build import make_env
+from mouse_envs.build import make_env, make_group_env
 from mouse_envs.config import EnvConfig
 from mouse_envs.format import (
     FieldSpec,
+    GroupEnv,
+    GroupTracker,
     InputSpec,
-    MetricsTracker,
-    MouseEnv,
     OutputSpec,
+    SingleEnv,
     StepOutput,
+    Tracker,
 )
 
 __version__ = version("mouse-env")
@@ -19,10 +21,13 @@ __all__ = [
     "__version__",
     "EnvConfig",
     "FieldSpec",
+    "GroupEnv",
+    "GroupTracker",
     "InputSpec",
     "make_env",
-    "MetricsTracker",
-    "MouseEnv",
+    "make_group_env",
     "OutputSpec",
+    "SingleEnv",
     "StepOutput",
+    "Tracker",
 ]

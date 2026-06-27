@@ -49,11 +49,24 @@ cfg = EnvConfig(
 env = make_env(cfg)
 
 for _ in range(1000):
-    inputs = env.sample_random_inputs()
-    outputs = env.step(inputs)
+    output = env.step(env.sample_random_input())
 
 # Episode stats accumulate in env.tracker automatically
-print(env.tracker.episode_cum_rewards)  # list[list[float]] — per env instance
+print(env.tracker.episode_cum_rewards)  # list[float]
+env.close()
+```
+
+For multiple envs, use `make_group_env`:
+
+```python
+from mouse_envs import EnvConfig, make_group_env
+
+env = make_group_env([
+    EnvConfig(id="CartPole-v1", reset_seed=0, name="cp-0", episodes_per_task=5),
+    EnvConfig(id="CartPole-v1", reset_seed=1, name="cp-1", episodes_per_task=5),
+])
+for _ in range(1000):
+    outputs = env.step(env.sample_random_input())  # list[dict]
 env.close()
 ```
 
@@ -61,37 +74,51 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 
 | Notebook | What it covers |
 |----------|----------------|
-| [01 — Random rollout](examples/01_random_rollout.ipynb) | End-to-end loop; output fields; `done` codes; reset frames; `EnvConfig`; `input_specs`/`output_specs`; tracker |
+| [01 — Random rollout](examples/01_random_rollout.ipynb) | End-to-end loop; output fields; `done` codes; reset frames; `EnvConfig`; `input_spec`/`output_spec` |
 | [02 — Expert Q-values](examples/02_q_star_expert.ipynb) | `q_star_source`; `hf_q_table` provider; value iteration; greedy expert rollout |
 | [03 — Non-stationary env](examples/03_ns_gym_oscillating.ipynb) | `env_fn` factory pattern; NS-Gym adapter; `ns_params` in outputs |
 | [04 — Atari preprocessing](examples/04_atari_preprocessing.ipynb) | `env_fn` + `AtariPreprocessing`; preprocessed frame passthrough |
 | [05 — Partial observability](examples/05_partial_observability.ipynb) | `observation_indices`; masking observation dimensions |
 | [06 — Reward shaping](examples/06_reward_shaping.ipynb) | `reward_scale`/`reward_shift`; effect on the raw `reward` field |
 | [07 — Synthetic env](examples/07_synthetic_env.ipynb) | `SyntheticEnv-v1`; `q_star`; tabular experiments |
-| [08 — Multiple envs](examples/08_multi_env.ipynb) | `list[EnvConfig]`; heterogeneous specs; env instance names |
+| [08 — Multiple envs](examples/08_multi_env.ipynb) | `make_group_env`; heterogeneous specs; env instance names |
 | [09 — Procedural FrozenLake](examples/09_procedural_frozenlake.ipynb) | `Procedural-FrozenLake-v1`; per-map Q*; continual training |
 | [10 — RNG seeding control](examples/10_rng_seeding_control.ipynb) | `map_seed`; `reset_seed`; reproducible generated maps and resets |
 | [11 — Play Procedural FrozenLake](examples/11_play_procedural_frozenlake.ipynb) | D-pad controls and rendered output for manually playing generated lakes |
+| [12 — Tracker](examples/12_metrics_tracker.ipynb) | `env.tracker`; raw vs shaped returns; `clear()` between eval runs; multi-env aggregation |
 
 ---
 
 ## Core API ⚙️
 
-`MouseEnv` is a Gymnasium `Env` subclass for space introspection, but it uses the Mouse reset-free rollout protocol instead of the standard Gymnasium `reset()`/`step(action)` loop. Public `reset()` raises `NotImplementedError`; the first `step()` quietly performs an internal reset and returns the initial observation using the same record shape as every other step. Inputs passed on that first call are ignored.
+`SingleEnv` and `GroupEnv` use the Mouse reset-free rollout protocol instead of the standard Gymnasium `reset()`/`step(action)` loop. Public `reset()` raises `NotImplementedError`; the first `step()` quietly performs an internal reset and returns the initial observation. Inputs passed on that first call are ignored.
 
 After an episode terminates or truncates, the next call to `step()` emits the reset observation for the next episode before normal stepping resumes.
 
-`step()` returns a single flat `list[dict]` of **outputs** — one entry per env instance. Each output dict contains model-visible training data: an `observation` value, rewards, done flags, time, episode metadata, optional `q_star` expert action-values, and environment-specific fields. Dict observations are preserved under the `observation` key.
+**`make_env(EnvConfig)`** returns a `SingleEnv`. **`make_group_env(list[EnvConfig])`** returns a `GroupEnv`. Both share the same method names; return types differ:
 
-`inputs` is a flat `list[dict]` — one dict per env instance, each with a single `"action"` tensor key. Use `env.input_specs[i]` to discover the expected dtype and shape for env index `i`; use `env.output_specs[i]` for the full output contract. Actions and observations preserve the underlying Gymnasium spaces' native dtypes wherever possible.
+| Method | `SingleEnv` | `GroupEnv` |
+|---|---|---|
+| `step(...)` | `(dict) -> dict` | `(list[dict]) -> list[dict]` |
+| `sample_random_input()` | `-> dict` | `-> list[dict]` |
+| `tracker` | `Tracker` | `GroupTracker` |
 
-Underlying Gymnasium spaces are available as tuple spaces on `env.action_space` and `env.observation_space`. For example, call `env.action_space.spaces[i].seed(...)` to control random action sampling for env instance `i` using the standard Gymnasium API.
+Each output dict contains model-visible training data: an `observation` value, rewards, done flags, time, episode metadata, optional expert Q-values as `info_q_star`, and environment-specific `info_*` fields.
 
-**Episode statistics** are kept separate from the per-step stream and are accumulated automatically in `env.tracker` (a `MetricsTracker`):
+On a `SingleEnv`, use `env.input_spec` and `env.output_spec`. On a `GroupEnv`, use `env.input_specs[i]` and `env.output_specs[i]`. Actions and observations preserve the underlying Gymnasium spaces' native dtypes wherever possible.
+
+`GroupEnv` exposes tuple `action_space` and `observation_space` for Gymnasium compatibility. On a `SingleEnv`, `action_space` and `observation_space` are the underlying gym spaces directly.
+
+**Episode statistics** are kept separate from the per-step stream and accumulate automatically in `env.tracker`:
 
 ```python
-env.tracker.episode_cum_rewards   # list[list[float]] — per-env raw cumulative returns
-env.tracker.episode_lengths       # list[list[float]] — per-env episode step counts
+# SingleEnv — flat lists (Tracker)
+env.tracker.episode_cum_rewards   # list[float]
+env.tracker.episode_lengths       # list[float]
+
+# GroupEnv — per-env lists (GroupTracker, read-through, no own storage)
+env.tracker.episode_cum_rewards   # list[list[float]]
+env.tracker.episode_lengths       # list[list[float]]
 env.tracker.clear()               # wipe accumulated data between evaluation runs
 ```
 
@@ -120,7 +147,7 @@ This keeps the rollout stream uniform while still making both episode and task s
 
 Pass any Gymnasium environment id as `id`. mouse-env builds the underlying Gymnasium env, steps it internally, and exposes the concatenated non-episodic stream through the same API.
 
-Each constructed env exposes names in `env.names`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`. Step outputs do not repeat this name on every record.
+Each constructed env exposes a name via `env.name` on `SingleEnv` or `env.names` on `GroupEnv`, formed from optional `EnvConfig.name` when provided, otherwise `EnvConfig.id`. Step outputs do not repeat this name on every record.
 
 mouse-env also includes a couple of custom environments. Other envs that need their own package — Atari (`gymnasium[atari]`) or non-stationary NS-Gym (`ns_gym`) — have no special code here; you build them in an `env_fn` factory (see [Bring your own env](#bring-your-own-env-env_fn) and the [examples](examples/)).
 
@@ -187,7 +214,7 @@ Example: [examples/02_q_star_expert.ipynb](examples/02_q_star_expert.ipynb)
 
 ### Bring your own env (`env_fn`)
 
-Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. `name` if set, otherwise `id`, is used in `env.names`. Time-limit truncation and any other wrappers are left entirely to your factory.
+Instead of using `id` to build a Gymnasium env, pass `env_fn` — a zero-arg factory that returns a freshly built (and already-wrapped, if you like) Gymnasium env. `name` if set, otherwise `id`, is used as the env name. Time-limit truncation and any other wrappers are left entirely to your factory.
 
 ```python
 def make_cartpole():
@@ -203,7 +230,7 @@ This is also how you apply custom Gymnasium wrappers (preprocessing, observation
 
 Use `episode_reset_options` to pass a dict to every internal `env.reset(options=...)`. Use `task_reset_options` for options that apply only when the reset starts a new task; these are overlaid on top of `episode_reset_options`.
 
-`EnvConfig.reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. To build multiple env instances, pass a `list[EnvConfig]` and choose reset seeds explicitly for each config:
+`EnvConfig.reset_seed` controls mouse-env's internal `env.reset(seed=...)` stream. To build multiple env instances, pass a list to `make_group_env` and choose reset seeds explicitly for each config:
 
 * `kwargs={"map_seed": ...}` controls first-party procedural map/MDP generation (`SyntheticEnv-v1` and `Procedural-FrozenLake-v1`). It is an env-specific constructor argument, not a base `EnvConfig` field.
 * In Gymnasium, reset seeding normally controls the random number generator used for reset-time randomness: initial state sampling, randomized reset observations, and other randomness that belongs to starting a new episode.

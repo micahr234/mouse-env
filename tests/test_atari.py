@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch
 
-from mouse_envs import EnvConfig, make_env
+from mouse_envs import EnvConfig, make_env, make_group_env
 
 ale_py = pytest.importorskip("ale_py")
 pytest.importorskip("gymnasium.wrappers.atari_preprocessing")
@@ -31,7 +31,7 @@ def _pong_factory(max_episode_steps: int, *, preprocess_kwargs: dict | None):
 
 
 def test_atari_vector_preprocessing() -> None:
-    env = make_env(
+    env = make_group_env(
         [
             EnvConfig(
                 id="ALE/Pong-v5",
@@ -46,7 +46,7 @@ def test_atari_vector_preprocessing() -> None:
         ]
     )
     try:
-        outputs = env.step(env.sample_random_inputs())
+        outputs = env.step(env.sample_random_input())
         assert len(outputs) == 2
 
         batch = np.stack([r["observation"].numpy() for r in outputs])
@@ -73,11 +73,11 @@ def test_atari_multi_step_rollout() -> None:
     )
     env = make_env(cfg)
     try:
-        env.step(env.sample_random_inputs())
-        outputs = env.step(env.sample_random_inputs())
-        assert outputs[0]["time"].item() >= 1
-        assert "observation" in outputs[0]
-        assert outputs[0]["observation"].dtype == torch.uint8
+        env.step(env.sample_random_input())
+        output = env.step(env.sample_random_input())
+        assert output["time"].item() >= 1
+        assert "observation" in output
+        assert output["observation"].dtype == torch.uint8
     finally:
         env.close()
 
@@ -91,11 +91,10 @@ def test_atari_discrete_action_sampling() -> None:
     )
     env = make_env(cfg)
     try:
-        inputs = env.sample_random_inputs()
-        assert len(inputs) == 1
-        assert "action" in inputs[0]
-        assert inputs[0]["action"].dtype == torch.int64
-        assert env.input_specs[0].action.dtype == torch.int64
+        inp = env.sample_random_input()
+        assert "action" in inp
+        assert inp["action"].dtype == torch.int64
+        assert env.input_spec.action.dtype == torch.int64
     finally:
         env.close()
 
@@ -109,10 +108,10 @@ def test_atari_without_preprocessing() -> None:
     )
     env = make_env(cfg)
     try:
-        outputs = env.step(env.sample_random_inputs())
+        output = env.step(env.sample_random_input())
         # Raw ALE frames are RGB; observation keeps its native (210, 160, 3) shape.
-        img = outputs[0]["observation"]
+        img = output["observation"]
         assert tuple(img.shape) == (210, 160, 3)
-        assert env.output_specs[0].observation.shape == (210, 160, 3)
+        assert env.output_spec.observation.shape == (210, 160, 3)
     finally:
         env.close()

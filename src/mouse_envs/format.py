@@ -117,45 +117,43 @@ class StepOutput(TypedDict, total=False):
     task_index: Required[int]
 
 
-class MetricsTracker:
-    """Accumulates per-env episode statistics; attached to :class:`MouseEnv` as ``.tracker``.
+class Tracker:
+    """Accumulates episode statistics for a single :class:`SingleEnv`.
 
-    ``MouseEnv.step()`` feeds completed-episode results automatically. Call
+    :class:`SingleEnv` feeds completed-episode results automatically. Call
     :meth:`clear` to wipe all accumulated data (e.g. between evaluation runs).
 
     Attributes
     ----------
     episode_cum_rewards:
-        Per-env list of raw (unscaled) cumulative rewards for every episode
-        completed since the last :meth:`clear` call. Empty lists until an
-        episode finishes in that env instance.
+        List of raw (unscaled) cumulative rewards for every episode completed
+        since the last :meth:`clear` call.
     episode_lengths:
-        Per-env list of episode step counts for every completed episode since
-        the last :meth:`clear` call.
+        List of episode step counts for every completed episode since the last
+        :meth:`clear` call.
     """
 
-    def __init__(self, num_envs: int) -> None:
-        self._num_envs = num_envs
-        self._episode_cum_rewards: list[list[float]] = [[] for _ in range(num_envs)]
-        self._episode_lengths: list[list[float]] = [[] for _ in range(num_envs)]
+    def __init__(self) -> None:
+        self._episode_cum_rewards: list[float] = []
+        self._episode_lengths: list[float] = []
 
-    def _record(self, env_index: int, cum_reward: float, length: float) -> None:
-        self._episode_cum_rewards[env_index].append(cum_reward)
-        self._episode_lengths[env_index].append(length)
+    def _record(self, cum_reward: float, length: float) -> None:
+        self._episode_cum_rewards.append(cum_reward)
+        self._episode_lengths.append(length)
 
     def clear(self) -> None:
-        """Wipe all accumulated episode data for every env instance."""
-        self._episode_cum_rewards = [[] for _ in range(self._num_envs)]
-        self._episode_lengths = [[] for _ in range(self._num_envs)]
+        """Wipe all accumulated episode data."""
+        self._episode_cum_rewards = []
+        self._episode_lengths = []
 
     @property
-    def episode_cum_rewards(self) -> list[list[float]]:
-        """Per-env lists of raw cumulative rewards for completed episodes."""
+    def episode_cum_rewards(self) -> list[float]:
+        """Raw cumulative rewards for completed episodes."""
         return self._episode_cum_rewards
 
     @property
-    def episode_lengths(self) -> list[list[float]]:
-        """Per-env lists of episode lengths (step counts) for completed episodes."""
+    def episode_lengths(self) -> list[float]:
+        """Episode lengths (step counts) for completed episodes."""
         return self._episode_lengths
 
 
@@ -439,56 +437,38 @@ class _EnvInstance:
         self._env.close()
 
 
-class MouseEnv(gym.Env):
-    """A flat list of independent env instances, each built from one :class:`EnvConfig`.
+class SingleEnv:
+    """A standalone environment wrapping one gym env with the Mouse rollout protocol.
 
-    Use :func:`mouse_envs.make_env` with a single :class:`EnvConfig` or a
-    ``list[EnvConfig]`` to construct. Each config creates one independent env
-    instance.
+    Construct via :func:`mouse_envs.make_env` with a single :class:`EnvConfig`.
 
-    ``step`` and ``sample_random_inputs`` use a flat structure indexed by env.
-    ``inputs[i]`` is the input dict for the i-th env instance. ``step`` returns a
-    flat ``list[dict]`` of outputs — one per env instance.
+    ``step`` implements the reset-free Mouse protocol: the first call performs an
+    internal reset and returns the initial observation (``done=0``, ``time=0``,
+    input ignored). After each episode ends, the next ``step`` call is also a reset
+    frame (input ignored). Public ``reset()`` raises ``NotImplementedError``.
 
     Episode statistics are accumulated automatically in :attr:`tracker`
-    (:class:`MetricsTracker`). Call ``env.tracker.clear()`` to reset the accumulated
+    (:class:`Tracker`). Call ``env.tracker.clear()`` to reset the accumulated
     data between evaluation runs.
 
-    ``MouseEnv`` subclasses :class:`gymnasium.Env` to expose Gymnasium spaces, but it
-    intentionally keeps the Mouse rollout protocol. Public ``reset()`` raises
-    ``NotImplementedError``; call ``step()`` only. The first ``step()`` after construction
-    performs an internal reset for each env instance and returns initial observations
-    with ``done == 0`` and ``time == 0``; inputs on that call are ignored. The step after
-    any episode terminates or truncates is also a reset frame: the user's action is
-    ignored and the first observation of the new episode is returned.
-
-    Every ``outputs[i]`` contains:
+    Every output dict contains:
         time (int64 tensor)       — step index within the episode (0-based)
         observation (tensor/dict) — the observation emitted by the env
         reward (tensor)           — raw env reward, unless reward_scale/reward_shift are set
         done (int64 tensor)       — 0=running, 1=episode terminated, 2=episode truncated,
                                     3=task terminated, 4=task truncated
-        episode_index (int)       — episode counter for this env instance
-        task_index (int)          — task counter for this env instance
-        info_<key> (any)          — every key from the Gymnasium info dict is forwarded as
-                                    ``info_<key>``. For example, ``info["q_star"]``
-                                    from a Q* wrapper appears as ``info_q_star``,
-                                    ``info["map"]`` as ``info_map``, ``info["ns_params"]``
-                                    as ``info_ns_params``.
-
-    Introspect the full output and input contracts via ``env.output_specs[i]`` and
-    ``env.input_specs[i]``, which are :class:`OutputSpec` and :class:`InputSpec`
-    dataclasses (one per env instance).
+        episode_index (int)       — episode counter
+        task_index (int)          — task counter
+        info_<key> (any)          — every key from the Gymnasium info dict forwarded as
+                                    ``info_<key>``
     """
 
-    def __init__(self, env_instances: list[_EnvInstance]) -> None:
-        if not env_instances:
-            raise ValueError("MouseEnv requires at least one env instance.")
-        self._env_instances = env_instances
-        self._tracker = MetricsTracker(len(env_instances))
+    def __init__(self, env_instance: _EnvInstance) -> None:
+        self._env_instance = env_instance
+        self._tracker = Tracker()
 
     @property
-    def tracker(self) -> MetricsTracker:
+    def tracker(self) -> Tracker:
         """Episode-statistics tracker; accumulates results from every completed episode.
 
         Call ``env.tracker.clear()`` to wipe accumulated data between evaluation runs.
@@ -496,65 +476,180 @@ class MouseEnv(gym.Env):
         return self._tracker
 
     @property
+    def name(self) -> str:
+        """Name of this env instance."""
+        return self._env_instance.name
+
+    @property
+    def output_spec(self) -> OutputSpec:
+        """Output contract for this env."""
+        return self._env_instance.output_spec
+
+    @property
+    def input_spec(self) -> InputSpec:
+        """Input contract for this env."""
+        return self._env_instance.input_spec
+
+    @property
+    def action_space(self) -> gym.Space:
+        """The underlying Gymnasium action space."""
+        return self._env_instance._env.action_space
+
+    @property
+    def observation_space(self) -> gym.Space:
+        """The underlying Gymnasium observation space."""
+        return self._env_instance._env.observation_space
+
+    def reset(self, **_kwargs: Any) -> None:
+        """Mouse rollouts reset internally; use ``step()`` instead."""
+        raise NotImplementedError(
+            "SingleEnv does not support public reset(); call step() to use the "
+            "reset-free Mouse rollout protocol."
+        )
+
+    def sample_random_input(self) -> dict:
+        """Sample a random action dict for this env. Pass directly to ``step()``."""
+        return self._env_instance.sample_random_input()
+
+    def step(self, input: dict) -> dict:
+        """Step the env and return one output dict.
+
+        On the first call and on any call immediately after an episode ends, the
+        input is ignored and a reset frame is returned instead.
+
+        Completed-episode statistics are recorded automatically into :attr:`tracker`.
+        Call ``env.tracker.clear()`` to reset between runs.
+        """
+        output, episode_result = self._env_instance.step(input)
+        if episode_result is not None:
+            cum_reward, length = episode_result
+            self._tracker._record(cum_reward, length)
+        return output
+
+    def render(self) -> list:
+        """Return rendered frames from this env instance."""
+        return self._env_instance.render()
+
+    def close(self) -> None:
+        """Close the underlying env."""
+        self._env_instance.close()
+
+
+class GroupTracker:
+    """Live read-through view over :class:`Tracker` instances of a :class:`GroupEnv`.
+
+    Stores no episode data of its own — all reads delegate to each constituent
+    :class:`SingleEnv`'s tracker. Multiple :class:`GroupEnv` instances may point to
+    overlapping sets of :class:`SingleEnv` objects without any data conflicts.
+
+    Attributes
+    ----------
+    episode_cum_rewards:
+        Per-env list of raw cumulative rewards. ``episode_cum_rewards[i]`` is the
+        list from ``envs[i].tracker.episode_cum_rewards``.
+    episode_lengths:
+        Per-env list of episode step counts. ``episode_lengths[i]`` is the list
+        from ``envs[i].tracker.episode_lengths``.
+    """
+
+    def __init__(self, envs: list[SingleEnv]) -> None:
+        self._envs = envs
+
+    @property
+    def episode_cum_rewards(self) -> list[list[float]]:
+        """Per-env cumulative rewards, read live from each env's tracker."""
+        return [e.tracker.episode_cum_rewards for e in self._envs]
+
+    @property
+    def episode_lengths(self) -> list[list[float]]:
+        """Per-env episode lengths, read live from each env's tracker."""
+        return [e.tracker.episode_lengths for e in self._envs]
+
+    def clear(self) -> None:
+        """Clear the tracker on every constituent env."""
+        for e in self._envs:
+            e.tracker.clear()
+
+
+class GroupEnv:
+    """A pure reference container that delegates to a list of :class:`SingleEnv` instances.
+
+    Construct via :func:`mouse_envs.make_group_env` or directly: ``GroupEnv([env_a, env_b, env_c])``.
+
+    ``GroupEnv`` stores no episode data. Multiple ``GroupEnv`` instances — including
+    overlapping ones — can point to the same :class:`SingleEnv` objects without conflict::
+
+        big = GroupEnv([env_a, env_b, env_c])
+        sub = GroupEnv([env_a, env_b])   # shares env_a and env_b with big — fine
+
+    Each :class:`SingleEnv` owns its own :class:`Tracker`; ``GroupEnv.tracker``
+    is a live read-through view with no independent storage.
+
+    ``step`` and ``sample_random_input`` use a flat list indexed by position.
+    ``inputs[i]`` is the input dict for the i-th env. ``step`` returns a flat
+    ``list[dict]`` — one per env.
+    """
+
+    def __init__(self, envs: list[SingleEnv]) -> None:
+        if not envs:
+            raise ValueError("GroupEnv requires at least one SingleEnv.")
+        self._envs = list(envs)
+        self._tracker = GroupTracker(self._envs)
+
+    @property
+    def envs(self) -> list[SingleEnv]:
+        """The constituent :class:`SingleEnv` instances."""
+        return self._envs
+
+    @property
+    def tracker(self) -> GroupTracker:
+        """Live read-through view over each env's :class:`Tracker`; stores no data."""
+        return self._tracker
+
+    @property
     def num_envs(self) -> int:
-        """Total number of independent env instances."""
-        return len(self._env_instances)
+        """Number of constituent env instances."""
+        return len(self._envs)
 
     @property
     def names(self) -> tuple[str, ...]:
-        """All env instance names."""
-        return tuple(env.name for env in self._env_instances)
+        """Names of all constituent env instances."""
+        return tuple(e.name for e in self._envs)
 
     @property
     def output_specs(self) -> list[OutputSpec]:
         """One :class:`OutputSpec` per env instance."""
-        return [env.output_spec for env in self._env_instances]
+        return [e.output_spec for e in self._envs]
 
     @property
     def input_specs(self) -> list[InputSpec]:
         """One :class:`InputSpec` per env instance."""
-        return [env.input_spec for env in self._env_instances]
+        return [e.input_spec for e in self._envs]
 
     @property
     def action_space(self) -> gym.spaces.Tuple:
         """Gymnasium tuple action space, one subspace per env instance."""
-        return gym.spaces.Tuple(tuple(env._env.action_space for env in self._env_instances))
+        return gym.spaces.Tuple(tuple(e.action_space for e in self._envs))
 
     @property
     def observation_space(self) -> gym.spaces.Tuple:
         """Gymnasium tuple observation space, one subspace per env instance."""
-        return gym.spaces.Tuple(tuple(env._env.observation_space for env in self._env_instances))
+        return gym.spaces.Tuple(tuple(e.observation_space for e in self._envs))
 
-    def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> tuple[Any, dict[str, Any]]:
-        """Mouse rollouts reset internally; use ``step()`` instead."""
-        raise NotImplementedError(
-            "MouseEnv does not support public reset(); call step() to use the "
-            "reset-free Mouse rollout protocol."
-        )
-
-    def sample_random_inputs(self) -> list[dict]:
+    def sample_random_input(self) -> list[dict]:
         """Sample random inputs for every env instance.
 
-        Returns a flat ``list[dict]`` — one dict per env instance. Pass the result
-        directly to ``step()``.
+        Returns a flat ``list[dict]`` — one dict per env. Pass directly to ``step()``.
         """
-        return [env.sample_random_input() for env in self._env_instances]
+        return [e.sample_random_input() for e in self._envs]
 
     def step(self, inputs: list[dict]) -> list[dict]:
-        """Step all env instances sequentially and return outputs.
+        """Step all env instances and return outputs.
 
         ``inputs[i]`` is the input dict for env instance ``i``. Returns a flat
-        ``list[dict]`` — one output dict per env instance. On the first call and on
-        any call immediately after an episode ends, the corresponding input is
-        ignored and a reset frame is returned instead.
-
-        Completed-episode statistics are recorded automatically into
-        :attr:`tracker`. Call ``env.tracker.clear()`` to reset between runs.
+        ``list[dict]`` — one output dict per env. On the first call and on any call
+        immediately after an episode ends, the corresponding input is ignored and a
+        reset frame is returned instead.
         """
         if not isinstance(inputs, list):
             raise ValueError(
@@ -564,26 +659,16 @@ class MouseEnv(gym.Env):
             raise ValueError(
                 f"inputs must contain exactly {self.num_envs} entries, got {len(inputs)}."
             )
-        all_outputs: list[dict] = []
-        for i, (env, inp) in enumerate(zip(self._env_instances, inputs)):
-            output, episode_result = env.step(inp)
-            all_outputs.append(output)
-            if episode_result is not None:
-                cum_reward, length = episode_result
-                self._tracker._record(i, cum_reward, length)
-        return all_outputs
+        return [e.step(inp) for e, inp in zip(self._envs, inputs)]
 
     def render(self) -> list:
-        """Return rendered frames from all env instances, flattened into one list.
-
-        Requires ``render_mode="rgb_array"`` (pass via ``EnvConfig.kwargs``).
-        """
+        """Return rendered frames from all env instances, flattened into one list."""
         frames: list = []
-        for env in self._env_instances:
-            frames.extend(env.render())
+        for e in self._envs:
+            frames.extend(e.render())
         return frames
 
     def close(self) -> None:
         """Close all env instances."""
-        for env in self._env_instances:
-            env.close()
+        for e in self._envs:
+            e.close()
