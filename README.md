@@ -16,7 +16,13 @@ You can stitch episodes together on top of Gymnasium yourself, but the result is
 
 The result is a continuing interface for episodic RL: ordinary episodic Gymnasium environments generate reset-free trajectories, with visible episode boundaries inside each task and explicit task boundaries that tell the algorithm when to cut credit.
 
----
+
+## News 📰
+
+- **2026-06-26 — `SingleEnv` / `GroupEnv`** `make_env` returns one standalone env; `make_group_env` handles parallel rollouts — a cleaner fit for online training loops that step envs individually or in batches.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
 
 ## Install 📦
 
@@ -32,7 +38,6 @@ cd mouse-env
 source scripts/install.sh
 ```
 
----
 
 ## Quick start 🚀
 
@@ -87,7 +92,6 @@ Runnable notebooks in [`examples/`](examples/) cover every feature with worked c
 | [11 — Play Procedural FrozenLake](examples/11_play_procedural_frozenlake.ipynb) | D-pad controls and rendered output for manually playing generated lakes |
 | [12 — Tracker](examples/12_metrics_tracker.ipynb) | `env.tracker`; raw vs shaped returns; `clear()` between eval runs; multi-env aggregation |
 
----
 
 ## Core API ⚙️
 
@@ -141,7 +145,6 @@ Reset frames are ordinary `outputs` records with:
 
 This keeps the rollout stream uniform while still making both episode and task structure explicit.
 
----
 
 ## Gymnasium environments 🌎
 
@@ -166,7 +169,6 @@ mouse-env also includes a couple of custom environments. Other envs that need th
 * Random MDP maps are generated lazily on the first reset, not during construction. By default, each env instance keeps one generated MDP across resets. Pass `episode_reset_options={"regenerate_map": True}` to sample a fresh MDP on every episode reset, or `task_reset_options={"regenerate_map": True}` to regenerate only when a new task starts.
 * Example: [examples/07_synthetic_env.ipynb](examples/07_synthetic_env.ipynb)
 
----
 
 ## Environment Tools 🛠️
 
@@ -249,20 +251,12 @@ Use `reward_scale` and `reward_shift` to scale and shift the raw per-step reward
 
 Example: [examples/06_reward_shaping.ipynb](examples/06_reward_shaping.ipynb)
 
----
 
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for a record of notable changes.
-
----
-
-## Contributing
+## Contributing 🔧
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
----
 
-## License
+## License 🔑
 
 GNU General Public License v3.0 — see [LICENSE](LICENSE).
